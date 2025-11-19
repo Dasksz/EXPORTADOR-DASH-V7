@@ -446,8 +446,8 @@
                     // Se não for faturamento, soma o que veio em VLVENDA (indevidamente) ao VLBONIFIC
                     VLBONIFIC: isFaturamento ? vlBonificOriginal : (vlVendaOriginal + vlBonificOriginal),
                     
-                    // Peso (tonelada) - [Instrução do usuário: Deve somar sempre, mesmo não sendo faturamento]
-                    TOTPESOLIQ: pesoOriginal, 
+                    // Peso (tonelada) - Apenas TIPOVENDA '1' e '9' contam para o peso
+                    TOTPESOLIQ: isFaturamento ? pesoOriginal : 0,
                     DTPED: dtPed, DTSAIDA: dtSaida,
                     POSICAO: String(rawRow['POSICAO'] || ''),
                     ESTOQUEUNIT: parseBrazilianNumber(rawRow['ESTOQUEUNIT']),
