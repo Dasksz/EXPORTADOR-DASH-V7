@@ -1533,6 +1533,8 @@
             }
             
             const salesFilter = s => 
+                (excludeFilter === 'supervisor' || !supervisor || s.SUPERV === supervisor) &&
+                (excludeFilter === 'seller' || sellersSet.size === 0 || sellersSet.has(s.NOME)) &&
                 (excludeFilter === 'supplier' || suppliersSet.size === 0 || suppliersSet.has(s.CODFOR)) &&
                 (excludeFilter === 'product' || productsSet.size === 0 || productsSet.has(s.PRODUTO)) &&
                 (excludeFilter === 'tipoVenda' || tiposVendaSet.size === 0 || tiposVendaSet.has(s.TIPOVENDA)) &&
@@ -1849,7 +1851,11 @@
             coverageSelectionCoverageValueKpiPrevious.textContent = `${selectionCoveragePercentPrevious.toFixed(2)}%`;
             coverageSelectionCoverageCountKpiPrevious.textContent = `${selectionCoveredCountPrevious.toLocaleString('pt-BR')} de ${activeClientsCount.toLocaleString('pt-BR')} clientes`;
             
-            tableData.sort((a, b) => b.coverageCurrent - a.coverageCurrent);
+            tableData.sort((a, b) => {
+                const trendA = isFinite(a.trendDays) ? a.trendDays : (a.stockQty > 0 ? 999999999 : -1);
+                const trendB = isFinite(b.trendDays) ? b.trendDays : (b.stockQty > 0 ? 999999999 : -1);
+                return trendB - trendA;
+            });
 
             let filteredTableData = tableData.filter(item => item.boxesSoldCurrentMonth > 0);
 
@@ -4887,7 +4893,7 @@
             doc.setFontSize(18);
             doc.text('Relatório de Inovações do Mês', 14, 22);
             doc.setFontSize(10);
-            doc.setTextColor(100);
+            doc.setTextColor(10);
             doc.text(`Data de Emissão: ${generationDate}`, 14, 30);
 
             let filterText = `Filtros Aplicados: Supervisor: ${supervisor} | Vendedor: ${vendedor} | Filial: ${filial} | Cidade: ${cidade} | Categoria: ${categoria}`;
@@ -4897,8 +4903,23 @@
             const chartCanvas = document.getElementById('innovations-month-chart');
             if (chartCanvas && charts['innovations-month-chart'] && chartLabels.length > 0) {
                 try {
+                    const chartInstance = charts['innovations-month-chart'];
+                    const originalColor = chartInstance.options.plugins.datalabels.color;
+                    const originalXColor = chartInstance.options.scales.x.ticks.color;
+                    const originalYColor = chartInstance.options.scales.y.ticks.color;
+
+                    chartInstance.options.plugins.datalabels.color = '#000000';
+                    chartInstance.options.scales.x.ticks.color = '#000000';
+                    chartInstance.options.scales.y.ticks.color = '#000000';
+                    chartInstance.update();
+
                     const chartImage = chartCanvas.toDataURL('image/png', 1.0);
                     doc.addImage(chartImage, 'PNG', 14, 50, 270, 100);
+
+                    chartInstance.options.plugins.datalabels.color = originalColor;
+                    chartInstance.options.scales.x.ticks.color = originalXColor;
+                    chartInstance.options.scales.y.ticks.color = originalYColor;
+                    chartInstance.update();
                 } catch (e) {
                     console.error("Erro ao converter o gráfico para imagem:", e);
                     doc.text("Erro ao gerar a imagem do gráfico.", 14, 50);
@@ -4936,12 +4957,12 @@
                 body: body,
                 startY: 155,
                 theme: 'grid',
-                styles: { fontSize: 7, cellPadding: 1.5 },
+                styles: { fontSize: 7, cellPadding: 1.5, textColor: [0, 0, 0] },
                 headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 7, fontStyle: 'bold' },
                 alternateRowStyles: { fillColor: [240, 248, 255] },
                 didDrawPage: function (data) {
                     doc.setFontSize(12);
-                    doc.setTextColor(40);
+                    doc.setTextColor(10);
                     doc.text("Dados do Gráfico", data.settings.margin.left, 152);
                 }
             });
@@ -4951,7 +4972,7 @@
                 doc.setFontSize(18);
                 doc.text('Relatório de Inovações por Cliente', 14, 22);
                 doc.setFontSize(10);
-                doc.setTextColor(100);
+                doc.setTextColor(10);
                 doc.text(`Data de Emissão: ${generationDate}`, 14, 30);
                 doc.text(splitFilters, 14, 36);
 
@@ -4989,7 +5010,7 @@
                     body: clientInnovationsBody,
                     startY: 55,
                     theme: 'grid',
-                    styles: { fontSize: 7, cellPadding: 1.5, halign: 'center' },
+                    styles: { fontSize: 7, cellPadding: 1.5, halign: 'center', textColor: [0, 0, 0] },
                     headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 7, fontStyle: 'bold' },
                     columnStyles: {
                         0: { halign: 'left' },
@@ -5006,7 +5027,7 @@
             for(let i = 1; i <= pageCount; i++) {
                 doc.setPage(i);
                 doc.setFontSize(9);
-                doc.setTextColor(150);
+                doc.setTextColor(10);
                 doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' });
             }
 
@@ -5032,7 +5053,7 @@
             doc.setFontSize(18);
             doc.text('Relatório de Cobertura (Estoque x PDVs)', 14, 22);
             doc.setFontSize(10);
-            doc.setTextColor(100);
+            doc.setTextColor(10);
             doc.text(`Data de Emissão: ${generationDate}`, 14, 30);
 
             let filterText = `Filtros Aplicados: Supervisor: ${supervisor} | Vendedor: ${vendedor} | Filial: ${filial} | Cidade: ${cidade} | Fornecedor: ${supplierText}`;
@@ -5043,8 +5064,23 @@
             const chartCanvas = document.getElementById('coverageCityChart');
             if (chartCanvas && charts['coverageCityChart']) {
                 try {
+                    const chartInstance = charts['coverageCityChart'];
+                    const originalColor = chartInstance.options.plugins.datalabels.color;
+                    const originalXColor = chartInstance.options.scales.x.ticks.color;
+                    const originalYColor = chartInstance.options.scales.y.ticks.color;
+
+                    chartInstance.options.plugins.datalabels.color = '#000000';
+                    chartInstance.options.scales.x.ticks.color = '#000000';
+                    chartInstance.options.scales.y.ticks.color = '#000000';
+                    chartInstance.update();
+
                     const chartImage = chartCanvas.toDataURL('image/png', 1.0);
                     doc.addImage(chartImage, 'PNG', 14, 50, 270, 80);
+
+                    chartInstance.options.plugins.datalabels.color = originalColor;
+                    chartInstance.options.scales.x.ticks.color = originalXColor;
+                    chartInstance.options.scales.y.ticks.color = originalYColor;
+                    chartInstance.update();
                 } catch (e) {
                     console.error("Erro ao converter o gráfico para imagem:", e);
                 }
@@ -5090,7 +5126,7 @@
                 body: body,
                 startY: 140,
                 theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 1.5 },
+                styles: { fontSize: 8, cellPadding: 1.5, textColor: [0, 0, 0] },
                 headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8, fontStyle: 'bold' },
                 alternateRowStyles: { fillColor: [240, 248, 255] },
                  didDrawPage: function (data) {
@@ -5102,7 +5138,7 @@
             for(let i = 1; i <= pageCount; i++) {
                 doc.setPage(i);
                 doc.setFontSize(9);
-                doc.setTextColor(150);
+                doc.setTextColor(10);
                 doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' });
             }
 
@@ -5139,7 +5175,7 @@
             const generationDate = new Date().toLocaleString('pt-BR'); const today = new Date();
             const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toLocaleDateString('pt-BR');
             const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toLocaleDateString('pt-BR');
-            doc.setFontSize(18); doc.text(title, 14, 22); doc.setFontSize(11); doc.setTextColor(100);
+            doc.setFontSize(18); doc.text(title, 14, 22); doc.setFontSize(11); doc.setTextColor(10);
             doc.text(`Período de Análise: ${firstDay} a ${lastDay}`, 14, 32);
             doc.text(`Supervisor: ${supervisor}`, 14, 38); doc.text(`Vendedor: ${vendedor}`, 14, 44);
             doc.text(`Data de Emissão: ${generationDate}`, 14, 50);
@@ -5164,9 +5200,9 @@
                 if (includeFaturamento) clientData.splice(2, 0, (client.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
                 tableRows.push(clientData);
             });
-            doc.autoTable({ head: [tableColumn], body: tableRows, startY: 60, theme: 'grid', styles: { fontSize: 8, cellPadding: 1.5 }, headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [240, 248, 255] }, margin: { top: 10 } });
+            doc.autoTable({ head: [tableColumn], body: tableRows, startY: 60, theme: 'grid', styles: { fontSize: 8, cellPadding: 1.5, textColor: [0, 0, 0] }, headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [240, 248, 255] }, margin: { top: 10 } });
             const pageCount = doc.internal.getNumberOfPages();
-            for(let i = 1; i <= pageCount; i++) { doc.setPage(i); doc.setFontSize(9); doc.setTextColor(150); doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' }); }
+            for(let i = 1; i <= pageCount; i++) { doc.setPage(i); doc.setFontSize(9); doc.setTextColor(10); doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' }); }
             const fileNameVendedor = vendedor.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'geral';
             doc.save(`${filename}_${fileNameVendedor}_${new Date().toISOString().slice(0,10)}.pdf`);
         }
