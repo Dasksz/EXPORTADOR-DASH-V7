@@ -1444,6 +1444,7 @@
         let coverageUnitPriceFilter = null;
         let customWorkingDaysCoverage = 0;
         let coverageTrendFilter = 'all';
+        let coverageTableDataForExport = [];
 
         const coverageTipoVendaFilterBtn = document.getElementById('coverage-tipo-venda-filter-btn');
         const coverageTipoVendaFilterText = document.getElementById('coverage-tipo-venda-filter-text');
@@ -1861,6 +1862,8 @@
                     return false;
                 });
             }
+
+            coverageTableDataForExport = filteredTableData;
 
             coverageTableBody.innerHTML = filteredTableData.map(item => {
                 let trendText;
@@ -5012,6 +5015,102 @@
         }
 
 
+        async function exportCoveragePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('landscape');
+
+            const supervisor = coverageSupervisorFilter.value || 'Todos';
+            const vendedor = selectedCoverageSellers.length > 0 ? selectedCoverageSellers.join(', ') : 'Todos';
+            const filial = coverageFilialFilter.options[coverageFilialFilter.selectedIndex].text;
+            const cidade = coverageCityFilter.value || 'Todas';
+            // Fornecedor
+            const supplierBtn = document.querySelector('#coverage-supplier-filter-btn span');
+            const supplierText = supplierBtn ? supplierBtn.textContent : 'Todos';
+
+            const generationDate = new Date().toLocaleString('pt-BR');
+
+            doc.setFontSize(18);
+            doc.text('Relatório de Cobertura (Estoque x PDVs)', 14, 22);
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text(`Data de Emissão: ${generationDate}`, 14, 30);
+
+            let filterText = `Filtros Aplicados: Supervisor: ${supervisor} | Vendedor: ${vendedor} | Filial: ${filial} | Cidade: ${cidade} | Fornecedor: ${supplierText}`;
+            const splitFilters = doc.splitTextToSize(filterText, 270);
+            doc.text(splitFilters, 14, 36);
+
+            // Add Chart if available
+            const chartCanvas = document.getElementById('coverageCityChart');
+            if (chartCanvas && charts['coverageCityChart']) {
+                try {
+                    const chartImage = chartCanvas.toDataURL('image/png', 1.0);
+                    doc.addImage(chartImage, 'PNG', 14, 50, 270, 80);
+                } catch (e) {
+                    console.error("Erro ao converter o gráfico para imagem:", e);
+                }
+            }
+
+            const head = [['Produto', 'Estoque (Cx)', 'Cx. Mês Ant.', 'Cx. Mês Atual', 'Cob. Estoque', 'PDVs Ant.', 'PDVs Atual', 'Var. Caixas']];
+            const body = [];
+
+            coverageTableDataForExport.forEach(item => {
+                let trendText;
+                if (!isFinite(item.trendDays) && item.stockQty > 0) {
+                    trendText = 'S/ VENDA';
+                } else if (isFinite(item.trendDays)) {
+                    trendText = Math.floor(item.trendDays) + ' dias';
+                } else {
+                    trendText = '-';
+                }
+
+                let variationContent;
+                if (isFinite(item.boxesVariation)) {
+                    variationContent = `${item.boxesVariation.toFixed(1)}%`;
+                } else if (item.boxesVariation === Infinity) {
+                    variationContent = 'Novo';
+                } else {
+                    variationContent = '-';
+                }
+
+                const row = [
+                    item.descricao,
+                    item.stockQty.toLocaleString('pt-BR'),
+                    item.boxesSoldPreviousMonth.toLocaleString('pt-BR', {maximumFractionDigits: 2}),
+                    item.boxesSoldCurrentMonth.toLocaleString('pt-BR', {maximumFractionDigits: 2}),
+                    trendText,
+                    item.clientsPreviousCount.toLocaleString('pt-BR'),
+                    item.clientsCurrentCount.toLocaleString('pt-BR'),
+                    variationContent
+                ];
+                body.push(row);
+            });
+
+            doc.autoTable({
+                head: head,
+                body: body,
+                startY: 140,
+                theme: 'grid',
+                styles: { fontSize: 8, cellPadding: 1.5 },
+                headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [240, 248, 255] },
+                 didDrawPage: function (data) {
+                    // Footer or Header on new pages
+                }
+            });
+
+            const pageCount = doc.internal.getNumberOfPages();
+            for(let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFontSize(9);
+                doc.setTextColor(150);
+                doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' });
+            }
+
+            const fileNameParam = vendedor.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'geral';
+            doc.save(`relatorio_cobertura_${fileNameParam}_${new Date().toISOString().slice(0,10)}.pdf`);
+        }
+
+
         function openModal(pedidoId) {
             const orderInfo = aggregatedOrders.find(order => order.PEDIDO == pedidoId);
             const itemsDoPedido = allSalesData.filter(item => item.PEDIDO == pedidoId);
@@ -5818,6 +5917,8 @@
                 mainDashboard.classList.remove('hidden');
                 updateAllVisuals();
             });
+
+            document.getElementById('export-coverage-pdf-btn').addEventListener('click', exportCoveragePDF);
 
             const debouncedHandleCoverageChange = debounce(handleCoverageFilterChange, 400);
 
@@ -6819,7 +6920,10 @@
                             <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                 <div class="flex justify-between items-center">
                                     <div><h1 class="text-2xl font-bold text-white">PAINEL DE VENDAS - <span class="text-yellow-300">PRIME</span> DISTRIBUIÇÃO</h1><p class="text-lg text-slate-300 -mt-1">Análise de Cobertura (Estoque x PDVs)</p></div>
-                                    <button id="back-to-main-from-coverage-btn" class="bg-white/20 hover:bg-white/30 text-white font-bold py-2 px-4 rounded-lg">Voltar ao Dashboard</button>
+                                    <div class="flex gap-4">
+                                        <button id="export-coverage-pdf-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Exportar PDF</button>
+                                        <button id="back-to-main-from-coverage-btn" class="bg-white/20 hover:bg-white/30 text-white font-bold py-2 px-4 rounded-lg">Voltar ao Dashboard</button>
+                                    </div>
                                 </div>
                             </header>
                             <!-- KPIs (Cobertura) -->
