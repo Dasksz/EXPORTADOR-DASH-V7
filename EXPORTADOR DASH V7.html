@@ -424,7 +424,8 @@
                     dtPed = dtSaida;
                 }
                 const productCode = String(rawRow['PRODUTO'] || '').trim();
-                const qtdeMaster = productMasterMap.get(productCode) || 1;
+                let qtdeMaster = productMasterMap.get(productCode);
+                if (!qtdeMaster || qtdeMaster <= 0) qtdeMaster = 1;
                 const qtVenda = parseInt(String(rawRow['QTVENDA'] || '0').trim(), 10) || 0;
 
                 // --- INÍCIO DA MODIFICAÇÃO: REGRA TIPOVENDA ---
@@ -1693,9 +1694,10 @@
             
             tableData.sort((a, b) => b.coverageCurrent - a.coverageCurrent);
 
-            let filteredTableData = tableData;
+            let filteredTableData = tableData.filter(item => item.boxesSoldCurrentMonth > 0);
+
             if (coverageTrendFilter !== 'all') {
-                filteredTableData = tableData.filter(item => {
+                filteredTableData = filteredTableData.filter(item => {
                     const trend = item.trendDays;
                     if (coverageTrendFilter === 'low') return isFinite(trend) && trend < 15;
                     if (coverageTrendFilter === 'medium') return isFinite(trend) && trend >= 15 && trend < 30;
@@ -1745,14 +1747,28 @@
 
             if (sortedCities.length > 0) {
                 createChart('coverageCityChart', 'bar', sortedCities.map(([city]) => city), sortedCities.map(([, qty]) => qty), {
-                    indexAxis: 'y',
+                    indexAxis: 'x',
                     plugins: {
                         datalabels: {
                             align: 'end',
                             anchor: 'end',
                             color: '#cbd5e1',
-                            font: { weight: 'bold' },
+                            font: { weight: 'bold', size: 14 },
                             formatter: (value) => value.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' caixas';
+                                    }
+                                    return label;
+                                }
+                            }
                         }
                     }
                 });
@@ -5421,9 +5437,31 @@
                 debouncedUpdateCoverage();
             });
 
+            function updateCoverageDependencies() {
+                const city = coverageCityFilter.value.trim().toLowerCase();
+                const { sales, history } = getCoverageFilteredData();
+                const combinedData = [...sales, ...history];
+
+                // Update Supervisor Filter
+                const supervisors = [...new Set(combinedData.map(item => item.SUPERV).filter(Boolean))].sort();
+                const currentSupervisor = coverageSupervisorFilter.value;
+                coverageSupervisorFilter.innerHTML = '<option value="">Todos</option>';
+                supervisors.forEach(sup => { coverageSupervisorFilter.innerHTML += `<option value="${sup}">${sup}</option>`; });
+                if (supervisors.includes(currentSupervisor)) coverageSupervisorFilter.value = currentSupervisor;
+                else coverageSupervisorFilter.value = '';
+
+                // Update Seller Filter
+                selectedCoverageSellers = updateSellerFilter(coverageSupervisorFilter.value, coverageVendedorFilterDropdown, coverageVendedorFilterText, selectedCoverageSellers, combinedData);
+            }
+
             coverageCityFilter.addEventListener('input', () => {
                 const cityDataSource = getCoverageFilteredData().clients;
+                coverageCitySuggestions.classList.remove('manual-hide'); // Ensure suggestions are shown
                 updateCitySuggestions(coverageCityFilter, coverageCitySuggestions, cityDataSource);
+                // Do not debounce updateCoverage here to allow typing without lag, but update dependencies
+            });
+            coverageCityFilter.addEventListener('change', () => {
+                updateCoverageDependencies();
                 debouncedUpdateCoverage();
             });
             coverageCityFilter.addEventListener('focus', () => {
@@ -5436,6 +5474,7 @@
                 if (e.target.tagName === 'DIV') {
                     coverageCityFilter.value = e.target.textContent;
                     coverageCitySuggestions.classList.add('hidden');
+                    updateCoverageDependencies();
                     debouncedUpdateCoverage();
                 }
             });
