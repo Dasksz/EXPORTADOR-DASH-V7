@@ -3816,14 +3816,23 @@
             innovationsPlaceholder.classList.add('hidden');
             innovationsResults.classList.remove('hidden');
 
-            // Build maps based on filters
-            // Main Coverage: Uses selected Tipo Venda (or All if empty)
-            const clientSalesCurrentMap = buildClientSalesMap(allSalesData, selectedInnovationsTiposVenda);
-            const clientSalesPreviousMap = buildClientSalesMap(allHistoryData, selectedInnovationsTiposVenda);
+            // Determine types to use
+            const availableTypes = new Set([...allSalesData.map(s => s.TIPOVENDA), ...allHistoryData.map(s => s.TIPOVENDA)]);
+            let currentSelection = selectedInnovationsTiposVenda.length > 0 ? selectedInnovationsTiposVenda : Array.from(availableTypes);
+
+            // Main Coverage: Selection EXCLUDING 5 and 11
+            const mainTypes = currentSelection.filter(t => t !== '5' && t !== '11');
+
+            // Bonus Coverage: Selection INTERSECTING 5 and 11
+            const bonusTypes = currentSelection.filter(t => t === '5' || t === '11');
+
+            // Build maps
+            // Use empty Map if the filter array is empty (meaning we shouldn't match anything for that category)
+            const clientSalesCurrentMap = mainTypes.length > 0 ? buildClientSalesMap(allSalesData, mainTypes) : new Map();
+            const clientSalesPreviousMap = mainTypes.length > 0 ? buildClientSalesMap(allHistoryData, mainTypes) : new Map();
             
-            // Bonus Coverage: Always uses types '5' and '11'
-            const clientBonusCurrentMap = buildClientSalesMap(allSalesData, ['5', '11']);
-            const clientBonusPreviousMap = buildClientSalesMap(allHistoryData, ['5', '11']);
+            const clientBonusCurrentMap = bonusTypes.length > 0 ? buildClientSalesMap(allSalesData, bonusTypes) : new Map();
+            const clientBonusPreviousMap = bonusTypes.length > 0 ? buildClientSalesMap(allHistoryData, bonusTypes) : new Map();
 
             const tableData = [];
             const clientsWhoGotSelectionCurrent = new Set();
@@ -4070,11 +4079,21 @@
             const clientsWhoGotBonusAnyVisibleProductCurrent = new Set();
             const clientsWhoGotBonusAnyVisibleProductPrevious = new Set();
 
+            // Determine types to use
+            const availableTypes = new Set([...allSalesData.map(s => s.TIPOVENDA), ...allHistoryData.map(s => s.TIPOVENDA)]);
+            let currentSelection = selectedInnovationsMonthTiposVenda.length > 0 ? selectedInnovationsMonthTiposVenda : Array.from(availableTypes);
+
+            // Main Coverage: Selection EXCLUDING 5 and 11
+            const mainTypes = currentSelection.filter(t => t !== '5' && t !== '11');
+
+            // Bonus Coverage: Selection INTERSECTING 5 and 11
+            const bonusTypes = currentSelection.filter(t => t === '5' || t === '11');
+
             // Build maps
-            const clientSalesCurrentMap = buildClientSalesMap(allSalesData, selectedInnovationsMonthTiposVenda);
-            const clientSalesPreviousMap = buildClientSalesMap(allHistoryData, selectedInnovationsMonthTiposVenda);
-            const clientBonusCurrentMap = buildClientSalesMap(allSalesData, ['5', '11']);
-            const clientBonusPreviousMap = buildClientSalesMap(allHistoryData, ['5', '11']);
+            const clientSalesCurrentMap = mainTypes.length > 0 ? buildClientSalesMap(allSalesData, mainTypes) : new Map();
+            const clientSalesPreviousMap = mainTypes.length > 0 ? buildClientSalesMap(allHistoryData, mainTypes) : new Map();
+            const clientBonusCurrentMap = bonusTypes.length > 0 ? buildClientSalesMap(allSalesData, bonusTypes) : new Map();
+            const clientBonusPreviousMap = bonusTypes.length > 0 ? buildClientSalesMap(allHistoryData, bonusTypes) : new Map();
 
             for (const categoryName in categories) {
                  if(selectedCategory && categoryName !== selectedCategory) continue;
