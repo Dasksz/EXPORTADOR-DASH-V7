@@ -484,7 +484,7 @@
             const date = new Date(Date.UTC(year, month, 1));
             // Ensure comparison is done in UTC terms
             const todayUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-            
+
             while (date <= todayUTC && date.getUTCMonth() === month) {
                 const dayOfWeek = date.getUTCDay();
                 if (dayOfWeek >= 1 && dayOfWeek <= 5) {
@@ -790,7 +790,7 @@
             if (typeof dateString === 'number') {
                 return new Date(Math.round((dateString - 25569) * 86400 * 1000));
             }
-            
+
             if (typeof dateString !== 'string') return null;
 
             // Tentativa de parse para 'YYYY-MM-DDTHH:mm:ss.sssZ' ou 'YYYY-MM-DD'
@@ -1885,7 +1885,7 @@
                         effectiveDaysToCalculate = productMaxLifeInWorkingDays;
                     }
                 }
-                
+
                 const daysDivisor = effectiveDaysToCalculate > 0 ? effectiveDaysToCalculate : 1;
                 const targetIndex = Math.max(0, sortedWorkingDays.length - daysDivisor);
                 const startDate = parseDate(sortedWorkingDays[targetIndex]);
@@ -1895,7 +1895,7 @@
                 productAllSales.forEach(sale => {
                     const saleDate = parseDate(sale.DTPED);
                     if (saleDate && saleDate >= startDate && saleDate <= endDate) {
-                        totalQtySoldInRange += (sale.QTVENDA_EMBALAGEM_MASTER || 0);
+                        totalQtySoldInRange += sale.QTVENDA_EMBALAGEM_MASTER;
                     }
                 });
 
@@ -3107,23 +3107,23 @@
             const weeks = [];
             // Find the first day of the month
             const firstOfMonth = new Date(Date.UTC(year, month, 1));
-            
+
             // Find the Sunday on or before the 1st
             const dayOfWeek = firstOfMonth.getUTCDay(); // 0 (Sun) to 6 (Sat)
             let currentStart = new Date(firstOfMonth);
             currentStart.setUTCDate(firstOfMonth.getUTCDate() - dayOfWeek);
-            
+
             // Find the last day of the month
             const lastOfMonth = new Date(Date.UTC(year, month + 1, 0));
-            
+
             // Iterate weeks until we cover the last day of the month
             while (currentStart <= lastOfMonth) {
                 const currentEnd = new Date(currentStart);
                 currentEnd.setUTCDate(currentStart.getUTCDate() + 6);
                 currentEnd.setUTCHours(23, 59, 59, 999);
-                
+
                 weeks.push({ start: new Date(currentStart), end: currentEnd });
-                
+
                 // Move to next Sunday
                 currentStart.setUTCDate(currentStart.getUTCDate() + 7);
             }
@@ -3310,7 +3310,7 @@
                     sortedMonths.shift();
                 }
             }
-            
+
             const monthsToAverage = sortedMonths.slice(-3);
 
             const kpiValues = monthsToAverage.map(monthKey => {
@@ -3320,33 +3320,6 @@
 
             if (kpiValues.length === 0) return 0;
             return kpiValues.reduce((a, b) => a + b, 0) / QUARTERLY_DIVISOR;
-        }
-
-        function calculateStockMonthlyAverage(historySales) {
-            const salesByMonth = groupSalesByMonth(historySales);
-            let sortedMonths = Object.keys(salesByMonth).sort();
-
-            if (sortedMonths.length > 0) {
-                const firstMonthKey = sortedMonths[0];
-                const firstSaleInFirstMonth = salesByMonth[firstMonthKey].reduce((earliest, sale) => {
-                    const saleDate = parseDate(sale.DTPED);
-                    return (!earliest || (saleDate && saleDate < earliest)) ? saleDate : earliest;
-                }, null);
-
-                if (firstSaleInFirstMonth && firstSaleInFirstMonth.getUTCDate() > 20) {
-                    sortedMonths.shift();
-                }
-            }
-            
-            const monthsToAverage = sortedMonths.slice(-3);
-
-            const kpiValues = monthsToAverage.map(monthKey => {
-                const salesForMonth = salesByMonth[monthKey];
-                return salesForMonth.reduce((sum, s) => sum + (s.QTVENDA_EMBALAGEM_MASTER || 0), 0);
-            });
-
-            if (kpiValues.length === 0) return 0;
-            return kpiValues.reduce((a, b) => a + b, 0) / kpiValues.length;
         }
 
         function getComparisonFilteredData(options = {}) {
@@ -3655,7 +3628,7 @@
             // Combine current sales with historical sales that fall within the first week's range (overlap)
             const firstWeekStart = currentMonthWeeks.length > 0 ? currentMonthWeeks[0].start : null;
             let salesForWeeklyCharts = [...currentSales];
-            
+
             if (firstWeekStart) {
                 const relevantHistory = historySales.filter(s => {
                     const d = parseDate(s.DTPED);
@@ -3682,7 +3655,7 @@
             // Em vez de usar a média diária, somamos as vendas da "Semana 1", "Semana 2", etc., de cada mês do histórico
             // e dividimos por 3 (QUARTERLY_DIVISOR). Isso preserva a sazonalidade dentro do mês.
 
-            const historySalesByWeekIndex = {}; 
+            const historySalesByWeekIndex = {};
             // Estrutura: { 0: totalWeek0, 1: totalWeek1, ... }
 
             // Identificar quais meses existem no histórico
@@ -3697,7 +3670,7 @@
             // Como iterar vendas é O(N), e gerar semanas é O(M), podemos otimizar:
             // Iteramos as vendas. Para cada venda, geramos as semanas do MÊS DA VENDA.
             // Descobrimos em qual índice ela cai.
-            
+
             // Otimização: Cache das semanas por mês para não recalcular a cada venda
             const monthWeeksCache = new Map();
 
@@ -3725,8 +3698,8 @@
                     // devido à lógica de semanas completas.
                     // Se a semana começar no mês anterior, getMonthWeeks(MesAtual) inclui dias do mês anterior.
                     // Se a venda é do dia 30/09 e estamos olhando semanas de Outubro, 30/09 pode estar na Semana 0 de Outubro.
-                    // Mas aqui estamos iterando vendas HISTÓRICAS. 
-                    // Se a venda tem data de 30/09, ela pertence ao mês 09. 
+                    // Mas aqui estamos iterando vendas HISTÓRICAS.
+                    // Se a venda tem data de 30/09, ela pertence ao mês 09.
                     // As semanas do mês 09 cobrem o dia 30/09.
                     // Portanto, weekIndex deve ser encontrado sempre, a menos que a data esteja fora do range gerado.
                 }
@@ -4035,7 +4008,6 @@
             // Map<ProductCode, Array<Sale>>
             const salesByProduct = new Map();
             const historyByProduct = new Map();
-            const historySalesListByProduct = new Map(); // New Map
             const totalQtyByProduct = new Map(); // combined total
             const currentMonthQtyByProduct = new Map(); // current month total
             const uniqueMonthsByProduct = new Map(); // Set of "YYYY-MM"
@@ -4055,9 +4027,6 @@
                 totalQtyByProduct.set(p, (totalQtyByProduct.get(p) || 0) + qty);
 
                 if (isHistory) {
-                    if (!historySalesListByProduct.has(p)) historySalesListByProduct.set(p, []);
-                    historySalesListByProduct.get(p).push(s);
-
                     if (!historyByProduct.has(p)) historyByProduct.set(p, 0); // Just flag existence/count
                     historyByProduct.set(p, historyByProduct.get(p) + 1); // Simple counter or bool check
                 } else {
@@ -4112,19 +4081,19 @@
 
                 const productCadastroDate = parseDate(details.dtCadastro);
                 let productFirstWorkingDayIndex = 0;
-                
+
                 if (productCadastroDate) {
                     const cadastroDateString = productCadastroDate.toISOString().split('T')[0];
                     productFirstWorkingDayIndex = sortedWorkingDays.findIndex(d => d >= cadastroDateString);
                     if (productFirstWorkingDayIndex === -1) {
-                        productFirstWorkingDayIndex = sortedWorkingDays.length; 
+                        productFirstWorkingDayIndex = sortedWorkingDays.length;
                     }
                 }
-                
+
                 const productMaxLifeInWorkingDays = sortedWorkingDays.length - productFirstWorkingDayIndex;
                 const daysFromBox = customWorkingDaysStock;
                 let effectiveDaysToCalculate;
-                
+
                 const isFactuallyNewOrReactivated = (!hasHistory && soldThisMonth);
 
                 if (isFactuallyNewOrReactivated) {
@@ -4134,14 +4103,14 @@
                     if (daysFromBox > 0) {
                         effectiveDaysToCalculate = Math.min(daysFromBox, productMaxLifeInWorkingDays);
                     } else {
-                        effectiveDaysToCalculate = productMaxLifeInWorkingDays; 
+                        effectiveDaysToCalculate = productMaxLifeInWorkingDays;
                     }
                 }
-                
+
                 const daysDivisor = effectiveDaysToCalculate > 0 ? effectiveDaysToCalculate : 1;
-                const targetIndex = Math.max(0, sortedWorkingDays.length - daysDivisor); 
+                const targetIndex = Math.max(0, sortedWorkingDays.length - daysDivisor);
                 const startDate = parseDate(sortedWorkingDays[targetIndex]);
-                
+
                 let totalQtySoldInRange = 0;
                 // Optimized loop: only iterating relevant sales for this product
                 productAllSales.forEach(sale => {
@@ -4155,8 +4124,8 @@
                 const isNew = productMaxLifeInWorkingDays <= passedWorkingDaysCurrentMonth;
                 const trendDays = dailyAvgSale > 0 ? (stock / dailyAvgSale) : (stock > 0 ? Infinity : 0);
 
-                const productHistorySales = historySalesListByProduct.get(productCode) || [];
-                const monthlyAvgSale = calculateStockMonthlyAverage(productHistorySales);
+                const uniqueMonthsCount = uniqueMonthsByProduct.has(productCode) ? uniqueMonthsByProduct.get(productCode).size : 0;
+                const monthlyAvgSale = uniqueMonthsCount > 0 ? totalQtySold / uniqueMonthsCount : 0;
 
                 productAnalysis.set(productCode, {
                     code: productCode,
