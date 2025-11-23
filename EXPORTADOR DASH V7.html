@@ -5662,13 +5662,14 @@
                     if (cityContent) cityContent.classList.add('hidden');
                     if (cityLoader) cityLoader.classList.remove('hidden');
                     setTimeout(() => {
+                        if (cityLoader) cityLoader.classList.add('hidden');
+                        if (cityContent) cityContent.classList.remove('hidden');
+
                         populateSupervisors('city-supervisor-filter', allSalesData);
                         selectedCitySellers = updateSellerFilter('', cityVendedorFilterDropdown, cityVendedorFilterText, selectedCitySellers, allSalesData);
                         selectedCityTiposVenda = updateTipoVendaFilter(cityTipoVendaFilterDropdown, cityTipoVendaFilterText, selectedCityTiposVenda, allSalesData);
                         updateRedeFilter(cityRedeFilterDropdown, cityComRedeBtnText, selectedCityRedes, allClientsData);
                         updateCityView();
-                        if (cityLoader) cityLoader.classList.add('hidden');
-                        if (cityContent) cityContent.classList.remove('hidden');
                     }, 10);
                     break;
                 case 'semanal':
