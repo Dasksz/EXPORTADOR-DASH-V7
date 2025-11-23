@@ -1358,7 +1358,6 @@
 
 
         const innovationsMonthView = document.getElementById('innovations-month-view');
-        const backToInnovationsFromMonthBtn = document.getElementById('back-to-innovations-from-month-btn');
         const innovationsMonthChartContainer = document.getElementById('innovations-month-chartContainer');
         const innovationsMonthTableBody = document.getElementById('innovations-month-table-body');
         const innovationsMonthCategoryFilter = document.getElementById('innovations-month-category-filter');
@@ -5289,7 +5288,7 @@
                 if (sidebarOverlay) sidebarOverlay.classList.add('hidden');
             }
 
-            [mainDashboard, cityView, weeklyView, comparisonView, stockView, innovationsView, innovationsMonthView, coverageView].forEach(el => {
+            [mainDashboard, cityView, weeklyView, comparisonView, stockView, innovationsMonthView, coverageView].forEach(el => {
                 if(el) el.classList.add('hidden');
             });
 
