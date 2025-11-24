@@ -2885,12 +2885,19 @@
                 }
             });
 
+            // Filter clients using the Coverage page logic
+            // (Include if name contains 'AMERICANAS S.A' OR RCA1 is not '53')
+            clientsForAnalysis = clientsForAnalysis.filter(c => {
+                const rca1 = String(c.rca1 || '').trim();
+                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+                return (isAmericanas || rca1 !== '53');
+            });
+
             let activeClientsList = [];
             let inactiveClientsList = [];
 
             clientsForAnalysis.forEach(client => {
                 const codcli = String(client['Código']);
-                if (codcli === '6720' || client.bloqueio === 'S') return;
 
                 const registrationDate = parseDate(client.dataCadastro);
                 client.isNew = registrationDate && registrationDate.getUTCMonth() === currentMonth && registrationDate.getUTCFullYear() === currentYear;
@@ -2909,8 +2916,6 @@
                     if (totalFaturamentoMes < 0) {
                         client.isReturn = true;
                     }
-                    const clientRcas = client.rcas || [];
-                    if (clientRcas.length > 0 && clientRcas.every(rca => rca === '53')) return;
                     client.isNewForInactiveLabel = client.isNew && !parseDate(client.ultimaCompra);
                     inactiveClientsList.push(client);
                 }
