@@ -6307,12 +6307,6 @@
                     } else {
                         selectedCoverageSuppliers = selectedCoverageSuppliers.filter(s => s !== value);
                     }
-                    // Pre-select products from this supplier
-                    const supplierProducts = new Set();
-                    selectedCoverageSuppliers.forEach(codfor => {
-                        (optimizedData.productsBySupplier.get(codfor) || []).forEach(prod => supplierProducts.add(prod));
-                    });
-                    selectedCoverageProducts = Array.from(supplierProducts);
 
                     markDirty('cobertura');
                     handleCoverageFilterChange({ skipFilter: 'supplier' });
