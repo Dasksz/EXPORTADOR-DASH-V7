@@ -1527,6 +1527,7 @@
         let customWorkingDaysCoverage = 0;
         let coverageTrendFilter = 'all';
         let coverageTableDataForExport = [];
+        let currentCoverageChartMode = 'city';
 
         const coverageTipoVendaFilterBtn = document.getElementById('coverage-tipo-venda-filter-btn');
         const coverageTipoVendaFilterText = document.getElementById('coverage-tipo-venda-filter-text');
@@ -2022,44 +2023,81 @@
 
             // Render Top 10 Cities Chart
             const salesByCity = {};
+            const salesBySeller = {};
+            
             sales.forEach(s => {
                 const city = s.CIDADE || 'N/A';
                 salesByCity[city] = (salesByCity[city] || 0) + s.QTVENDA_EMBALAGEM_MASTER;
+                
+                const seller = s.NOME || 'N/A';
+                salesBySeller[seller] = (salesBySeller[seller] || 0) + s.QTVENDA_EMBALAGEM_MASTER;
             });
 
+            // 1. Chart Data for Cities
             const sortedCities = Object.entries(salesByCity)
                 .sort(([,a], [,b]) => b - a)
                 .slice(0, 10);
 
-            if (sortedCities.length > 0) {
-                createChart('coverageCityChart', 'bar', sortedCities.map(([city]) => city), sortedCities.map(([, qty]) => qty), {
-                    indexAxis: 'x',
-                    plugins: {
-                        datalabels: {
-                            align: 'end',
-                            anchor: 'end',
-                            color: '#cbd5e1',
-                            font: { weight: 'bold', size: 14 },
-                            formatter: (value) => value.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed.y !== null) {
-                                        label += context.parsed.y.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' caixas';
-                                    }
-                                    return label;
+            // 2. Chart Data for Sellers
+            const sortedSellers = Object.entries(salesBySeller)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 10);
+
+            const commonChartOptions = {
+                indexAxis: 'x',
+                plugins: {
+                    datalabels: {
+                        align: 'end',
+                        anchor: 'end',
+                        color: '#cbd5e1',
+                        font: { weight: 'bold', size: 14 },
+                        formatter: (value) => value.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
                                 }
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' caixas';
+                                }
+                                return label;
                             }
                         }
                     }
-                });
+                }
+            };
+
+            if (sortedCities.length > 0) {
+                createChart('coverageCityChart', 'bar', sortedCities.map(([city]) => city), sortedCities.map(([, qty]) => qty), commonChartOptions);
             } else {
                 showNoDataMessage('coverageCityChart', 'Sem dados para exibir.');
+            }
+
+            if (sortedSellers.length > 0) {
+                createChart('coverageSellerChart', 'bar', sortedSellers.map(([seller]) => getFirstName(seller)), sortedSellers.map(([, qty]) => qty), commonChartOptions);
+            } else {
+                showNoDataMessage('coverageSellerChart', 'Sem dados para exibir.');
+            }
+
+            // Visibility Toggle Logic
+            const cityContainer = document.getElementById('coverageCityChartContainer');
+            const sellerContainer = document.getElementById('coverageSellerChartContainer');
+            const toggleBtn = document.getElementById('coverage-chart-toggle-btn');
+            const chartTitle = document.getElementById('coverage-chart-title');
+
+            if (currentCoverageChartMode === 'city') {
+                if (cityContainer) cityContainer.classList.remove('hidden');
+                if (sellerContainer) sellerContainer.classList.add('hidden');
+                if (toggleBtn) toggleBtn.textContent = 'Ver Vendedores';
+                if (chartTitle) chartTitle.textContent = 'Top 10 Cidades (Quantidade de Caixas)';
+            } else {
+                if (cityContainer) cityContainer.classList.add('hidden');
+                if (sellerContainer) sellerContainer.classList.remove('hidden');
+                if (toggleBtn) toggleBtn.textContent = 'Ver Cidades';
+                if (chartTitle) chartTitle.textContent = 'Top 10 Vendedores (Quantidade de Caixas)';
             }
         }
         
@@ -5273,10 +5311,11 @@
             doc.text(splitFilters, 14, 36);
 
             // Add Chart if available
-            const chartCanvas = document.getElementById('coverageCityChart');
-            if (chartCanvas && charts['coverageCityChart']) {
+            const chartId = currentCoverageChartMode === 'city' ? 'coverageCityChart' : 'coverageSellerChart';
+            const chartCanvas = document.getElementById(chartId);
+            if (chartCanvas && charts[chartId]) {
                 try {
-                    const chartInstance = charts['coverageCityChart'];
+                    const chartInstance = charts[chartId];
                     const originalDatalabelsColor = chartInstance.options.plugins.datalabels.color;
                     const originalXColor = chartInstance.options.scales.x.ticks.color;
                     const originalYColor = chartInstance.options.scales.y.ticks.color;
@@ -6230,6 +6269,14 @@
 
 
             document.getElementById('export-coverage-pdf-btn').addEventListener('click', exportCoveragePDF);
+            
+            const coverageChartToggleBtn = document.getElementById('coverage-chart-toggle-btn');
+            if (coverageChartToggleBtn) {
+                coverageChartToggleBtn.addEventListener('click', () => {
+                    currentCoverageChartMode = currentCoverageChartMode === 'city' ? 'seller' : 'city';
+                    updateCoverageView();
+                });
+            }
 
             // --- Coverage View Filters ---
             const updateCoverage = () => {
@@ -7272,8 +7319,14 @@
                                 </div>
                             </div>
                             <div class="bg-[#1d2347] p-4 rounded-lg border border-slate-700 shadow-sm mb-6">
-                                <h2 class="text-lg font-semibold text-white text-center mb-4">Top 10 Cidades (Quantidade de Caixas)</h2>
+                                <div class="flex justify-between items-center mb-4 relative">
+                                    <h2 id="coverage-chart-title" class="text-lg font-semibold text-white text-center w-full">Top 10 Cidades (Quantidade de Caixas)</h2>
+                                    <div class="absolute right-0 top-0 bottom-0 flex items-center">
+                                        <button id="coverage-chart-toggle-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-1 px-3 rounded shadow">Ver Vendedores</button>
+                                    </div>
+                                </div>
                                 <div id="coverageCityChartContainer" class="relative h-80"></div>
+                                <div id="coverageSellerChartContainer" class="relative h-80 hidden"></div>
                             </div>
                             <!-- Tabela (Cobertura) -->
                             <div id="coverage-table-container" class="bg-[#1d2347] p-4 rounded-lg border border-slate-700 shadow-sm">
