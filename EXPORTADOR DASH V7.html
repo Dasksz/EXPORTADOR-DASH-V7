@@ -5462,8 +5462,17 @@
         function toggleSidebar() {
             const sideMenu = document.getElementById('side-menu');
             const sidebarOverlay = document.getElementById('sidebar-overlay');
-            if (sideMenu) sideMenu.classList.toggle('-translate-x-full');
-            if (sidebarOverlay) sidebarOverlay.classList.toggle('hidden');
+            const contentWrapper = document.getElementById('content-wrapper');
+
+            if (window.innerWidth >= 1024) {
+                // Desktop Toggle Logic
+                if (sideMenu) sideMenu.classList.toggle('lg:translate-x-0');
+                if (contentWrapper) contentWrapper.classList.toggle('lg:ml-64');
+            } else {
+                // Mobile Toggle Logic
+                if (sideMenu) sideMenu.classList.toggle('-translate-x-full');
+                if (sidebarOverlay) sidebarOverlay.classList.toggle('hidden');
+            }
         }
 
         function navigateTo(view) {
@@ -6580,7 +6589,7 @@
                         <aside id="side-menu" class="fixed top-0 left-0 z-50 w-64 h-screen transition-transform -translate-x-full lg:translate-x-0 bg-[#1d2347] border-r border-slate-700 flex flex-col">
                             <div class="flex items-center justify-between p-4 border-b border-slate-700">
                                 <span class="text-xl font-bold text-white">Menu</span>
-                                <button id="close-sidebar-btn" class="lg:hidden text-slate-400 hover:text-white">
+                                <button id="close-sidebar-btn" class="text-slate-400 hover:text-white">
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                 </button>
                             </div>
@@ -6645,7 +6654,7 @@
                                     <!-- Cabeçalho com gradiente escuro -->
                                     <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                         <div class="flex items-center gap-4">
-                                            <button class="sidebar-toggle lg:hidden text-white focus:outline-none">
+                                            <button class="sidebar-toggle text-white focus:outline-none">
                                                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                             </button>
                                             <div class="flex-1 flex flex-col sm:flex-row justify-between items-start gap-4">
@@ -6770,7 +6779,7 @@
                         <div id="city-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
                             <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                 <div class="flex items-center gap-4">
-                                    <button class="sidebar-toggle lg:hidden text-white focus:outline-none">
+                                    <button class="sidebar-toggle text-white focus:outline-none">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                     </button>
                                     <div><h1 class="text-2xl font-bold text-white">PAINEL DE VENDAS - <span class="text-yellow-300">PRIME</span> DISTRIBUIÇÃO</h1><p class="text-lg text-slate-300 -mt-1">Análise de Vendas por Cidade</p></div>
@@ -6830,7 +6839,7 @@
                         <div id="weekly-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
                             <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                 <div class="flex items-center gap-4">
-                                    <button class="sidebar-toggle lg:hidden text-white focus:outline-none">
+                                    <button class="sidebar-toggle text-white focus:outline-none">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                     </button>
                                     <div><h1 class="text-2xl font-bold text-white">PAINEL DE VENDAS - <span class="text-yellow-300">PRIME</span> DISTRIBUIÇÃO</h1><p class="text-lg text-slate-300 -mt-1">Acompanhamento Semanal</p></div>
@@ -6856,7 +6865,7 @@
                         <div id="comparison-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
                             <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                 <div class="flex items-center gap-4">
-                                    <button class="sidebar-toggle lg:hidden text-white focus:outline-none">
+                                    <button class="sidebar-toggle text-white focus:outline-none">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                     </button>
                                     <div><h1 class="text-2xl font-bold text-white">PAINEL DE VENDAS - <span class="text-yellow-300">PRIME</span> DISTRIBUIÇÃO</h1><p class="text-lg text-slate-300 -mt-1">Comparativo entre Meses</p></div>
@@ -6951,7 +6960,7 @@
                         <div id="stock-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
                             <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                 <div class="flex items-center gap-4">
-                                    <button class="sidebar-toggle lg:hidden text-white focus:outline-none">
+                                    <button class="sidebar-toggle text-white focus:outline-none">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                     </button>
                                     <div><h1 class="text-2xl font-bold text-white">PAINEL DE VENDAS - <span class="text-yellow-300">PRIME</span> DISTRIBUIÇÃO</h1><p class="text-lg text-slate-300 -mt-1">Análise de Estoque</p></div>
@@ -7084,7 +7093,7 @@
                         <div id="innovations-month-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
                              <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                 <div class="flex items-center gap-4">
-                                    <button class="sidebar-toggle lg:hidden text-white focus:outline-none">
+                                    <button class="sidebar-toggle text-white focus:outline-none">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                     </button>
                                     <div class="flex-1 flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -7156,7 +7165,7 @@
                         <div id="coverage-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
                             <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
                                 <div class="flex items-center gap-4">
-                                    <button class="sidebar-toggle lg:hidden text-white focus:outline-none">
+                                    <button class="sidebar-toggle text-white focus:outline-none">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                                     </button>
                                     <div class="flex-1 flex flex-col sm:flex-row justify-between items-center gap-4">
