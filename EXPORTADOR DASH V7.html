@@ -1730,24 +1730,49 @@
             const { clients, sales } = getMixFilteredData();
             const activeClientCodes = new Set(clients.map(c => c['Código']));
 
-            // Build Client Purchases Map (Track specific brands)
-            // Map<CodCli, Set<BrandName>>
-            const clientBrands = new Map();
+            // --- LÓGICA ESTRITA DE POSITIVAÇÃO (Idêntica ao Comparativo) ---
             
+            // 1. Agregar Valor Líquido por Produto por Cliente
+            const clientProductNetValues = new Map(); // Map<CODCLI, Map<PRODUTO, NetValue>>
+            const clientProductDesc = new Map(); // Map<PRODUTO, Descricao> (Cache)
+
             sales.forEach(s => {
-                if (!s.CODCLI || !s.DESCRICAO) return;
-                if (!clientBrands.has(s.CODCLI)) clientBrands.set(s.CODCLI, new Set());
+                if (!s.CODCLI || !s.PRODUTO) return;
                 
-                const clientSet = clientBrands.get(s.CODCLI);
-                const desc = normalize(s.DESCRICAO);
+                if (!clientProductNetValues.has(s.CODCLI)) {
+                    clientProductNetValues.set(s.CODCLI, new Map());
+                }
+                const clientMap = clientProductNetValues.get(s.CODCLI);
+                const currentVal = clientMap.get(s.PRODUTO) || 0;
+                clientMap.set(s.PRODUTO, currentVal + (Number(s.VLVENDA) || 0));
+
+                if (!clientProductDesc.has(s.PRODUTO)) {
+                    clientProductDesc.set(s.PRODUTO, s.DESCRICAO);
+                }
+            });
+
+            // 2. Determinar Categorias Positivadas por Cliente
+            // Uma categoria é positivada se o cliente comprou Pelo MENOS UM produto dela com valor líquido > 1
+            const clientPositivatedCategories = new Map(); // Map<CODCLI, Set<CategoryName>>
+
+            clientProductNetValues.forEach((productsMap, codCli) => {
+                const positivatedCats = new Set();
                 
-                // Check Brands
-                MIX_SALTY_CATEGORIES.forEach(brand => {
-                    if (desc.includes(normalize(brand))) clientSet.add(brand);
+                productsMap.forEach((netValue, prodCode) => {
+                    if (netValue > 1) {
+                        const desc = normalize(clientProductDesc.get(prodCode) || '');
+                        
+                        // Checar Salty
+                        MIX_SALTY_CATEGORIES.forEach(cat => {
+                            if (desc.includes(normalize(cat))) positivatedCats.add(cat);
+                        });
+                        // Checar Foods
+                        MIX_FOODS_CATEGORIES.forEach(cat => {
+                            if (desc.includes(normalize(cat))) positivatedCats.add(cat);
+                        });
+                    }
                 });
-                MIX_FOODS_CATEGORIES.forEach(brand => {
-                    if (desc.includes(normalize(brand))) clientSet.add(brand);
-                });
+                clientPositivatedCategories.set(codCli, positivatedCats);
             });
 
             let positivadosSalty = 0;
@@ -1758,11 +1783,12 @@
 
             clients.forEach(client => {
                 const codcli = client['Código'];
-                const brands = clientBrands.get(codcli) || new Set();
+                const positivatedCats = clientPositivatedCategories.get(codcli) || new Set();
                 
                 // Determine Status based on "Buying ALL" (Strict Positive)
-                const hasSalty = MIX_SALTY_CATEGORIES.every(b => brands.has(b));
-                const hasFoods = MIX_FOODS_CATEGORIES.every(b => brands.has(b));
+                // O cliente deve ter positivado TODAS as categorias da lista para ser considerado "Positivado no KPI"
+                const hasSalty = MIX_SALTY_CATEGORIES.every(b => positivatedCats.has(b));
+                const hasFoods = MIX_FOODS_CATEGORIES.every(b => positivatedCats.has(b));
                 
                 if (hasSalty) positivadosSalty++;
                 if (hasFoods) positivadosFoods++;
@@ -1770,9 +1796,9 @@
 
                 const missing = [];
                 // Detailed missing analysis for Salty
-                MIX_SALTY_CATEGORIES.forEach(b => { if(!brands.has(b)) missing.push(b); });
+                MIX_SALTY_CATEGORIES.forEach(b => { if(!positivatedCats.has(b)) missing.push(b); });
                 // Detailed missing analysis for Foods
-                MIX_FOODS_CATEGORIES.forEach(b => { if(!brands.has(b)) missing.push(b); });
+                MIX_FOODS_CATEGORIES.forEach(b => { if(!positivatedCats.has(b)) missing.push(b); });
 
                 const missingText = missing.length > 0 ? missing.join(', ') : '';
                 
@@ -1786,10 +1812,12 @@
                 const rowData = {
                     codcli: codcli,
                     name: client.fantasia || client.razaoSocial,
+                    // Correção para cidade undefined: Tenta todas as propriedades possíveis
+                    city: client.cidade || client.CIDADE || client['Nome da Cidade'] || 'N/A',
                     vendedor: vendorName,
                     hasSalty: hasSalty,
                     hasFoods: hasFoods,
-                    brands: brands, // Set of owned brands
+                    brands: positivatedCats, // Set of strictly positivated brands
                     missingText: missingText,
                     // Score for sorting: Opportunities first (missing > 0)
                     score: missing.length
@@ -1850,9 +1878,11 @@
 
             // Render Table with Detailed Columns
             tableData.sort((a, b) => {
-                // Sort: Opportunities first (missing > 0), then by name
-                if (a.missingText && !b.missingText) return -1;
-                if (!a.missingText && b.missingText) return 1;
+                // Sort by City (Alphabetical), then by Client Name
+                const cityA = (a.city || '').toLowerCase();
+                const cityB = (b.city || '').toLowerCase();
+                if (cityA < cityB) return -1;
+                if (cityA > cityB) return 1;
                 return a.name.localeCompare(b.name);
             });
 
@@ -1863,7 +1893,7 @@
 
             const xIcon = `<svg class="w-3 h-3 text-red-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
 
-            document.getElementById('mix-table-body').innerHTML = tableData.slice(0, 500).map(row => {
+            let tableHTML = tableData.slice(0, 500).map(row => {
                 let saltyCols = MIX_SALTY_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : xIcon}</td>`).join('');
                 let foodsCols = MIX_FOODS_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : xIcon}</td>`).join('');
                 
@@ -1877,6 +1907,17 @@
                     ${foodsCols}
                 </tr>
             `}).join('');
+
+            // Append Footer with Totals
+            tableHTML += `
+                <tr class="bg-slate-800 font-bold border-t-2 border-slate-600 text-xs sticky bottom-0 z-20">
+                    <td colspan="4" class="px-2 py-3 text-right text-white">TOTAL POSITIVADOS:</td>
+                    <td colspan="${MIX_SALTY_CATEGORIES.length}" class="px-2 py-3 text-center text-teal-400 text-sm border-l border-slate-600">${positivadosSalty}</td>
+                    <td colspan="${MIX_FOODS_CATEGORIES.length}" class="px-2 py-3 text-center text-yellow-400 text-sm border-l border-slate-600">${positivadosFoods}</td>
+                </tr>
+            `;
+
+            document.getElementById('mix-table-body').innerHTML = tableHTML;
         }
 
         async function exportMixPDF() {
@@ -1914,13 +1955,29 @@
                 ];
             });
 
+            // Calculate Totals for Footer
+            let totalSalty = 0;
+            let totalFoods = 0;
+            mixTableDataForExport.forEach(row => {
+                if(row.hasSalty) totalSalty++;
+                if(row.hasFoods) totalFoods++;
+            });
+
+            const footerRow = [
+                { content: 'TOTAL POSITIVADOS:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: String(totalSalty), colSpan: MIX_SALTY_CATEGORIES.length, styles: { halign: 'center', fontStyle: 'bold', textColor: [20, 184, 166] } },
+                { content: String(totalFoods), colSpan: MIX_FOODS_CATEGORIES.length, styles: { halign: 'center', fontStyle: 'bold', textColor: [245, 158, 11] } }
+            ];
+
             doc.autoTable({
                 head: head,
                 body: body,
+                foot: [footerRow],
                 startY: 45,
                 theme: 'grid',
                 styles: { fontSize: 6, cellPadding: 1, textColor: [0, 0, 0], halign: 'center' },
                 headStyles: { fillColor: [20, 184, 166], textColor: 255, fontStyle: 'bold' },
+                footStyles: { fillColor: [240, 248, 255], textColor: [0, 0, 0] }, // Light background for footer
                 columnStyles: { 
                     0: { halign: 'left', cellWidth: 15 },
                     1: { halign: 'left', cellWidth: 40 },
@@ -8033,26 +8090,26 @@
                                 <div class="overflow-auto custom-scrollbar" style="max-height: 60vh;">
                                     <table class="min-w-full text-sm text-left text-slate-300">
                                         <thead class="text-xs text-slate-400 uppercase">
-                                            <tr style="position: sticky; top: 0; z-index: 20; background-color: #1d2347;">
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Cód</th>
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Cliente</th>
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Cidade</th>
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Vendedor</th>
-                                                <th colspan="5" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800/50 text-teal-400">Mix Salty</th>
-                                                <th colspan="4" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800/50 text-yellow-400">Mix Foods</th>
+                                            <tr style="position: sticky; top: 0; z-index: 30;">
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left bg-[#1d2347]">Cód</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left bg-[#1d2347]">Cliente</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left bg-[#1d2347]">Cidade</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left bg-[#1d2347]">Vendedor</th>
+                                                <th colspan="5" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800 text-teal-400">Mix Salty</th>
+                                                <th colspan="4" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800 text-yellow-400">Mix Foods</th>
                                             </tr>
-                                            <tr style="position: sticky; top: 37px; z-index: 20; background-color: #1d2347;">
+                                            <tr style="position: sticky; top: 37px; z-index: 20;">
                                                 <!-- Salty Subheaders -->
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">CHEETOS</th>
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">DORITOS</th>
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">FANDANGOS</th>
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">RUFFLES</th>
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">TORCIDA</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">CHEETOS</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">DORITOS</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">FANDANGOS</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">RUFFLES</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">TORCIDA</th>
                                                 <!-- Foods Subheaders -->
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">TODDYNHO</th>
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">TODDY</th>
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">QUAKER</th>
-                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">KEROCOCO</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">TODDYNHO</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">TODDY</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">QUAKER</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px] bg-[#1d2347]">KEROCOCO</th>
                                             </tr>
                                         </thead>
                                         <tbody id="mix-table-body" class="divide-y divide-slate-700"></tbody>
