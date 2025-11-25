@@ -1042,11 +1042,15 @@
             });
 
             optimizedData.rcaCodeByName = new Map();
-            const populateRcaCodeMap = (s) => {
-                if(s.NOME && s.CODUSUR) optimizedData.rcaCodeByName.set(s.NOME, s.CODUSUR);
+            optimizedData.rcaNameByCode = new Map();
+            const populateRcaMap = (s) => {
+                if(s.NOME && s.CODUSUR) {
+                    optimizedData.rcaCodeByName.set(s.NOME, s.CODUSUR);
+                    optimizedData.rcaNameByCode.set(s.CODUSUR, s.NOME);
+                }
             };
-            allSalesData.forEach(populateRcaCodeMap);
-            allHistoryData.forEach(populateRcaCodeMap);
+            allSalesData.forEach(populateRcaMap);
+            allHistoryData.forEach(populateRcaMap);
 
             [...allSalesData, ...allHistoryData].forEach(sale => {
                 if (sale.CODCLI && sale.FILIAL) {
@@ -1726,24 +1730,24 @@
             const { clients, sales } = getMixFilteredData();
             const activeClientCodes = new Set(clients.map(c => c['Código']));
 
-            // Build Client Purchases Map
-            // Map<CodCli, Set<Categories>>
-            const clientCategories = new Map();
+            // Build Client Purchases Map (Track specific brands)
+            // Map<CodCli, Set<BrandName>>
+            const clientBrands = new Map();
             
             sales.forEach(s => {
                 if (!s.CODCLI || !s.DESCRICAO) return;
-                if (!clientCategories.has(s.CODCLI)) clientCategories.set(s.CODCLI, new Set());
+                if (!clientBrands.has(s.CODCLI)) clientBrands.set(s.CODCLI, new Set());
                 
+                const clientSet = clientBrands.get(s.CODCLI);
                 const desc = normalize(s.DESCRICAO);
                 
-                // Check Salty
-                if (MIX_SALTY_CATEGORIES.some(cat => desc.includes(normalize(cat)))) {
-                    clientCategories.get(s.CODCLI).add('SALTY');
-                }
-                // Check Foods
-                if (MIX_FOODS_CATEGORIES.some(cat => desc.includes(normalize(cat)))) {
-                    clientCategories.get(s.CODCLI).add('FOODS');
-                }
+                // Check Brands
+                MIX_SALTY_CATEGORIES.forEach(brand => {
+                    if (desc.includes(normalize(brand))) clientSet.add(brand);
+                });
+                MIX_FOODS_CATEGORIES.forEach(brand => {
+                    if (desc.includes(normalize(brand))) clientSet.add(brand);
+                });
             });
 
             let positivadosSalty = 0;
@@ -1754,36 +1758,43 @@
 
             clients.forEach(client => {
                 const codcli = client['Código'];
-                const cats = clientCategories.get(codcli) || new Set();
+                const brands = clientBrands.get(codcli) || new Set();
                 
-                const hasSalty = cats.has('SALTY');
-                const hasFoods = cats.has('FOODS');
+                // Determine Status based on "Buying ANY" (Positive)
+                const hasSalty = MIX_SALTY_CATEGORIES.some(b => brands.has(b));
+                const hasFoods = MIX_FOODS_CATEGORIES.some(b => brands.has(b));
                 
                 if (hasSalty) positivadosSalty++;
                 if (hasFoods) positivadosFoods++;
                 if (hasSalty && hasFoods) positivadosBoth++;
 
                 const missing = [];
-                if (!hasSalty) missing.push('SALTY');
-                if (!hasFoods) missing.push('FOODS');
+                // Detailed missing analysis for Salty
+                MIX_SALTY_CATEGORIES.forEach(b => { if(!brands.has(b)) missing.push(b); });
+                // Detailed missing analysis for Foods
+                MIX_FOODS_CATEGORIES.forEach(b => { if(!brands.has(b)) missing.push(b); });
 
-                // Detailed Missing Items (Oportunidades)
-                // Only listing the broad category is boring. Let's check specific categories if requested.
-                // But for now, the request specifically asked for "Mix Salty" and "Mix Foods".
-                // "Showing which categories were positivadas and which are missing".
-                // The categories ARE Salty and Foods.
-                // Let's assume the user wants to know if they missed Salty or Foods.
+                const missingText = missing.length > 0 ? missing.join(', ') : '';
                 
-                tableData.push({
+                // Resolve Vendor Name
+                const rcaCode = client.rcas[0];
+                let vendorName = 'N/A';
+                if (rcaCode) {
+                    vendorName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+                }
+
+                const rowData = {
                     codcli: codcli,
                     name: client.fantasia || client.razaoSocial,
-                    vendedor: client.rcas[0] || 'N/A', // Primary RCA
+                    vendedor: vendorName,
                     hasSalty: hasSalty,
                     hasFoods: hasFoods,
-                    missing: missing.join(' & '),
-                    // For sorting: Priority to those who have 1 but not both (Opportunity)
-                    score: (!hasSalty && hasFoods) || (hasSalty && !hasFoods) ? 2 : (!hasSalty && !hasFoods) ? 1 : 0
-                });
+                    brands: brands, // Set of owned brands
+                    missingText: missingText,
+                    // Score for sorting: Opportunities first (missing > 0)
+                    score: missing.length
+                };
+                tableData.push(rowData);
             });
 
             const totalClients = clients.length;
@@ -1810,14 +1821,11 @@
             
             createChart('mixDistributionChart', 'doughnut', ['Mix Ideal (Ambos)', 'Só Salty', 'Só Foods', 'Nenhum'], distributionData, {
                 backgroundColor: ['#a855f7', '#14b8a6', '#f59e0b', '#475569'],
-                plugins: {
-                    legend: { position: 'right' }
-                }
+                plugins: { legend: { position: 'right' } }
             });
 
             // Seller Efficiency Chart
             const sellerStats = {};
-            // Use tableData because it has the assigned RCA
             tableData.forEach(row => {
                 const seller = row.vendedor;
                 if (!sellerStats[seller]) sellerStats[seller] = { total: 0, both: 0, salty: 0, foods: 0 };
@@ -1828,7 +1836,7 @@
             });
 
             const sortedSellers = Object.entries(sellerStats)
-                .sort(([,a], [,b]) => b.both - a.both) // Sort by Mix Ideal count
+                .sort(([,a], [,b]) => b.both - a.both)
                 .slice(0, 10);
 
             createChart('mixSellerChart', 'bar', sortedSellers.map(([name]) => getFirstName(name)), 
@@ -1837,40 +1845,43 @@
                     { label: 'Salty Total', data: sortedSellers.map(([,s]) => s.salty), backgroundColor: '#14b8a6', hidden: true },
                     { label: 'Foods Total', data: sortedSellers.map(([,s]) => s.foods), backgroundColor: '#f59e0b', hidden: true }
                 ], 
-                {
-                    scales: { x: { stacked: false }, y: { stacked: false } }
-                }
+                { scales: { x: { stacked: false }, y: { stacked: false } } }
             );
 
-            // Render Table
-            // Sort by score descending (Opportunities first), then name
+            // Render Table with Detailed Columns
             tableData.sort((a, b) => {
-                if (b.score !== a.score) return b.score - a.score;
+                // Sort: Opportunities first (missing > 0), then by name
+                if (a.missingText && !b.missingText) return -1;
+                if (!a.missingText && b.missingText) return 1;
                 return a.name.localeCompare(b.name);
             });
 
             mixTableDataForExport = tableData;
 
-            const checkIcon = `<svg class="w-5 h-5 text-green-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
-            const xIcon = `<svg class="w-5 h-5 text-red-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+            const checkIcon = `<svg class="w-4 h-4 text-green-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+            const dashIcon = `<span class="text-slate-600 text-xs">-</span>`;
 
-            document.getElementById('mix-table-body').innerHTML = tableData.slice(0, 500).map(row => `
+            document.getElementById('mix-table-body').innerHTML = tableData.slice(0, 500).map(row => {
+                let saltyCols = MIX_SALTY_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : dashIcon}</td>`).join('');
+                let foodsCols = MIX_FOODS_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : dashIcon}</td>`).join('');
+                
+                return `
                 <tr class="hover:bg-slate-700/50 border-b border-slate-700/50 last:border-0">
-                    <td class="px-4 py-2 font-medium text-slate-300">${row.codcli}</td>
-                    <td class="px-4 py-2">${row.name}</td>
-                    <td class="px-4 py-2 text-sm text-slate-400">${row.vendedor}</td>
-                    <td class="px-4 py-2 text-center">${row.hasSalty ? checkIcon : xIcon}</td>
-                    <td class="px-4 py-2 text-center">${row.hasFoods ? checkIcon : xIcon}</td>
-                    <td class="px-4 py-2 text-sm">
-                        ${row.missing ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-900/30 text-red-300 border border-red-800">Falta: ${row.missing}</span>` : '<span class="text-green-400 text-xs font-bold">MIX COMPLETO</span>'}
+                    <td class="px-2 py-2 font-medium text-slate-300 text-xs">${row.codcli}</td>
+                    <td class="px-2 py-2 text-xs truncate max-w-[150px]" title="${row.name}">${row.name}</td>
+                    <td class="px-2 py-2 text-xs text-slate-400 truncate max-w-[100px]">${row.vendedor}</td>
+                    ${saltyCols}
+                    ${foodsCols}
+                    <td class="px-2 py-2 text-xs border-l border-slate-700/50">
+                        ${row.missingText ? `<span class="text-red-400" title="Falta: ${row.missingText}">Falta: ${row.missingText}</span>` : '<span class="text-green-400 font-bold">MIX COMPLETO</span>'}
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         async function exportMixPDF() {
             const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
+            const doc = new jsPDF('landscape'); // Switch to landscape for wide table
             
             const supervisor = document.getElementById('mix-supervisor-filter-text').textContent;
             const vendedor = document.getElementById('mix-vendedor-filter-text').textContent;
@@ -1878,54 +1889,55 @@
             const generationDate = new Date().toLocaleString('pt-BR');
 
             doc.setFontSize(18);
-            doc.text('Relatório de Oportunidades - Mix Salty & Foods', 14, 22);
+            doc.text('Relatório de Detalhado - Mix Salty & Foods', 14, 22);
             doc.setFontSize(10);
             doc.setTextColor(10);
             doc.text(`Data de Emissão: ${generationDate}`, 14, 30);
             doc.text(`Filtros: Supervisor: ${supervisor} | Vendedor: ${vendedor} | Cidade: ${city}`, 14, 36);
 
-            // Chart Snapshot
-            const chartCanvas = document.getElementById('mixDistributionChart');
-            if (chartCanvas && charts['mixDistributionChart']) {
-                const chartImage = chartCanvas.toDataURL('image/png', 1.0);
-                doc.addImage(chartImage, 'PNG', 14, 45, 80, 40);
-                
-                doc.setFontSize(10);
-                doc.text("KPIs de Cobertura:", 100, 50);
-                doc.text(`Salty: ${document.getElementById('mix-salty-kpi').textContent}`, 100, 60);
-                doc.text(`Foods: ${document.getElementById('mix-foods-kpi').textContent}`, 100, 68);
-                doc.text(`Mix Ideal: ${document.getElementById('mix-both-kpi').textContent}`, 100, 76);
-            }
-
-            const head = [['Cód', 'Cliente', 'Vendedor', 'Salty', 'Foods', 'Oportunidade']];
-            const body = mixTableDataForExport.map(row => [
-                row.codcli,
-                row.name,
-                row.vendedor,
-                row.hasSalty ? 'SIM' : 'NÃO',
-                row.hasFoods ? 'SIM' : 'NÃO',
-                row.missing || 'OK'
-            ]);
+            // Determine dynamic columns
+            const saltyCols = MIX_SALTY_CATEGORIES.map(c => c.substring(0, 8)); // Truncate headers
+            const foodsCols = MIX_FOODS_CATEGORIES.map(c => c.substring(0, 8));
+            
+            const head = [['Cód', 'Cliente', 'Vendedor', ...saltyCols, ...foodsCols, 'Oportunidade']];
+            
+            const body = mixTableDataForExport.map(row => {
+                const saltyCells = MIX_SALTY_CATEGORIES.map(b => row.brands.has(b) ? 'OK' : '-');
+                const foodsCells = MIX_FOODS_CATEGORIES.map(b => row.brands.has(b) ? 'OK' : '-');
+                return [
+                    row.codcli,
+                    row.name,
+                    row.vendedor,
+                    ...saltyCells,
+                    ...foodsCells,
+                    row.missingText || 'COMPLETO'
+                ];
+            });
 
             doc.autoTable({
                 head: head,
                 body: body,
-                startY: 90,
+                startY: 45,
                 theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 1.5, textColor: [0, 0, 0] },
+                styles: { fontSize: 6, cellPadding: 1, textColor: [0, 0, 0], halign: 'center' },
                 headStyles: { fillColor: [20, 184, 166], textColor: 255, fontStyle: 'bold' },
                 columnStyles: { 
-                    3: { halign: 'center', fontStyle: 'bold' }, 
-                    4: { halign: 'center', fontStyle: 'bold' },
-                    5: { textColor: [220, 38, 38] } // Red for opportunities
+                    0: { halign: 'left', cellWidth: 15 },
+                    1: { halign: 'left', cellWidth: 40 },
+                    2: { halign: 'left', cellWidth: 25 },
+                    [head[0].length - 1]: { textColor: [220, 38, 38], cellWidth: 'auto' } 
                 },
                 didParseCell: function(data) {
                     if (data.section === 'body') {
-                        if (data.column.index === 3 && data.cell.raw === 'SIM') data.cell.styles.textColor = [22, 163, 74];
-                        if (data.column.index === 3 && data.cell.raw === 'NÃO') data.cell.styles.textColor = [220, 38, 38];
-                        if (data.column.index === 4 && data.cell.raw === 'SIM') data.cell.styles.textColor = [22, 163, 74];
-                        if (data.column.index === 4 && data.cell.raw === 'NÃO') data.cell.styles.textColor = [220, 38, 38];
-                        if (data.column.index === 5 && data.cell.raw === 'OK') data.cell.styles.textColor = [22, 163, 74];
+                        // Colorize OK/Missing cells
+                        if (data.cell.raw === 'OK') {
+                            data.cell.styles.textColor = [22, 163, 74]; // Green
+                            data.cell.styles.fontStyle = 'bold';
+                        }
+                        if (data.cell.raw === 'COMPLETO') {
+                            data.cell.styles.textColor = [22, 163, 74];
+                            data.cell.styles.fontStyle = 'bold';
+                        }
                     }
                 }
             });
@@ -1938,7 +1950,7 @@
                 doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' });
             }
 
-            doc.save(`relatorio_mix_oportunidades_${new Date().toISOString().slice(0,10)}.pdf`);
+            doc.save(`relatorio_mix_detalhado_${new Date().toISOString().slice(0,10)}.pdf`);
         }
 
         // <!-- INÍCIO DO CÓDIGO RESTAURADO -->
@@ -8022,12 +8034,25 @@
                                     <table class="min-w-full text-sm text-left text-slate-300">
                                         <thead class="text-xs text-slate-400 uppercase sticky-header">
                                             <tr>
-                                                <th class="px-4 py-3">Cód</th>
-                                                <th class="px-4 py-3">Cliente</th>
-                                                <th class="px-4 py-3">Vendedor</th>
-                                                <th class="px-4 py-3 text-center">Salty</th>
-                                                <th class="px-4 py-3 text-center">Foods</th>
-                                                <th class="px-4 py-3">Oportunidades (Itens Faltantes)</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600">Cód</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600">Cliente</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600">Vendedor</th>
+                                                <th colspan="5" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800/50 text-teal-400">Mix Salty</th>
+                                                <th colspan="4" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800/50 text-yellow-400">Mix Foods</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 border-l border-slate-600">Oportunidades</th>
+                                            </tr>
+                                            <tr>
+                                                <!-- Salty Subheaders -->
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">CHEETOS</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">DORITOS</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">FANDANGOS</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">RUFFLES</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">TORCIDA</th>
+                                                <!-- Foods Subheaders -->
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">TODDYNHO</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">TODDY</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">QUAKER</th>
+                                                <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">KEROCOCO</th>
                                             </tr>
                                         </thead>
                                         <tbody id="mix-table-body" class="divide-y divide-slate-700"></tbody>
