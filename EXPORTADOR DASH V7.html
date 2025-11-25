@@ -1964,9 +1964,9 @@
             });
 
             const footerRow = [
-                { content: 'TOTAL POSITIVADOS:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, textColor: [255, 255, 255] } },
-                { content: String(totalSalty), colSpan: MIX_SALTY_CATEGORIES.length, styles: { halign: 'center', fontStyle: 'bold', fontSize: 10, textColor: [45, 212, 191] } }, // Teal-400
-                { content: String(totalFoods), colSpan: MIX_FOODS_CATEGORIES.length, styles: { halign: 'center', fontStyle: 'bold', fontSize: 10, textColor: [250, 204, 21] } } // Yellow-400
+                { content: 'TOTAL POSITIVADOS:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fontSize: 12, textColor: [255, 255, 255] } },
+                { content: String(totalSalty), colSpan: MIX_SALTY_CATEGORIES.length, styles: { halign: 'center', fontStyle: 'bold', fontSize: 12, textColor: [45, 212, 191] } }, // Teal-400
+                { content: String(totalFoods), colSpan: MIX_FOODS_CATEGORIES.length, styles: { halign: 'center', fontStyle: 'bold', fontSize: 12, textColor: [250, 204, 21] } } // Yellow-400
             ];
 
             doc.autoTable({
@@ -1977,7 +1977,7 @@
                 theme: 'grid',
                 styles: { fontSize: 6, cellPadding: 1, textColor: [0, 0, 0], halign: 'center' },
                 headStyles: { fillColor: [20, 184, 166], textColor: 255, fontStyle: 'bold', fontSize: 8 },
-                footStyles: { fillColor: [40, 40, 40] }, // Darker Grey background for footer
+                footStyles: { fillColor: [50, 50, 50] }, // Dark Grey background for footer
                 columnStyles: { 
                     0: { halign: 'left', cellWidth: 15 },
                     1: { halign: 'left', cellWidth: 40 },
