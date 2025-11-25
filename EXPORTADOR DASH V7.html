@@ -885,79 +885,65 @@
         let customWorkingDaysStock = 0;
 
         function initializeOptimizedDataStructures() {
-            // --- OTIMIZAÇÃO: Lógica de Remapeamento In-Place e Normalização ---
-            try {
-                const sellerDetailsMap = new Map();
-                // Popula mapa de detalhes do vendedor (Nome/Supervisor) baseado no CODUSUR
-                // Itera uma vez sobre dados concatenados (virtualmente)
-                const extractSellerDetails = (s) => {
-                    if (s.CODUSUR && (!sellerDetailsMap.has(s.CODUSUR) || s.NOME)) {
-                        sellerDetailsMap.set(s.CODUSUR, { name: s.NOME, supervisor: s.SUPERV });
-                    }
-                };
-                for (let i = 0; i < allSalesData.length; i++) extractSellerDetails(allSalesData[i]);
-                for (let i = 0; i < allHistoryData.length; i++) extractSellerDetails(allHistoryData[i]);
+            const sellerDetailsMap = new Map();
+            const clientToCurrentSellerMap = new Map();
+            let americanasCodCli = null;
 
-                const clientToCurrentSellerMap = new Map();
-                let americanasCodCli = null;
-                
-                // 1. Pre-process Clients: Create maps and search indices
-                optimizedData.clientsByRca = new Map();
-                optimizedData.searchIndices.clients = new Array(allClientsData.length);
+            [...allSalesData, ...allHistoryData].forEach(s => {
+                if (s.CODUSUR && (!sellerDetailsMap.has(s.CODUSUR) || s.NOME)) {
+                    sellerDetailsMap.set(s.CODUSUR, { name: s.NOME, supervisor: s.SUPERV });
+                }
+            });
 
-                for(let i=0; i<allClientsData.length; i++) {
-                    const client = allClientsData[i];
-                    
-                    // Ensure primitives for Client
-                    client['Código'] = String(client['Código']);
-                    client.cidade = client.cidade || 'N/A';
+            optimizedData.clientsByRca = new Map();
+            optimizedData.searchIndices.clients = allClientsData.map(client => {
+                const codCli = String(client['Código']);
+                client['Código'] = codCli;
+                client.cidade = client.cidade || 'N/A';
 
+                try {
                     if ((client.razaoSocial || '').toUpperCase().includes('AMERICANAS')) {
                         client.rca1 = '1001';
                         client.rcas = ['1001'];
-                        americanasCodCli = client['Código'];
+                        americanasCodCli = codCli;
                     }
-                    
-                    if (client.rca1) {
-                        clientToCurrentSellerMap.set(client['Código'], String(client.rca1));
-                    }
-
-                    clientRamoMap.set(client['Código'], client.ramo || 'N/A');
-                    
-                    if (client.rcas) {
-                        client.rcas.forEach(rca => {
-                            if (!optimizedData.clientsByRca.has(rca)) {
-                                optimizedData.clientsByRca.set(rca, []);
-                            }
-                            optimizedData.clientsByRca.get(rca).push(client);
-                        });
-                    }
-
-                    optimizedData.searchIndices.clients[i] = {
-                        code: client['Código'],
-                        nameLower: (client.nomeCliente || '').toLowerCase(),
-                        cityLower: (client.cidade || '').toLowerCase()
-                    };
+                } catch (e) {
+                    console.warn(`Could not process client for Americanas logic:`, client, e);
                 }
 
-                // Function to process sales data in-place: Remap Seller + Ensure Primitives + Parse Dates
-                const processSalesDataInPlace = (dataList) => {
-                    for (let i = 0; i < dataList.length; i++) {
-                        const sale = dataList[i];
-                        
-                        // 1. Ensure Primitives
-                        sale.PRODUTO = String(sale.PRODUTO);
-                        sale.CODFOR = String(sale.CODFOR);
-                        sale.TIPOVENDA = String(sale.TIPOVENDA);
-                        sale.CODCLI = String(sale.CODCLI);
-                        // sale.SUPERV = sale.SUPERV || 'N/A'; // Will be handled in remapping
-                        // sale.NOME = sale.NOME || 'N/A'; // Will be handled in remapping
-                        sale.CIDADE = sale.CIDADE || 'N/A';
+                if (client.rca1) clientToCurrentSellerMap.set(codCli, String(client.rca1));
+                clientRamoMap.set(codCli, client.ramo || 'N/A');
 
-                        // 2. Remap Seller Logic
-                        const clientCode = sale.CODCLI;
-                        if (clientCode !== americanasCodCli) {
-                            const currentSellerCode = clientToCurrentSellerMap.get(clientCode);
+                if (client.rcas) {
+                    client.rcas.forEach(rca => {
+                        if (rca) {
+                            if (!optimizedData.clientsByRca.has(rca)) optimizedData.clientsByRca.set(rca, []);
+                            optimizedData.clientsByRca.get(rca).push(client);
+                        }
+                    });
+                }
+                return { code: codCli, nameLower: (client.nomeCliente || '').toLowerCase(), cityLower: (client.cidade || '').toLowerCase() };
+            });
+
+            optimizedData.rcasBySupervisor = new Map();
+            optimizedData.productsBySupplier = new Map();
+            optimizedData.salesByProduct = { current: new Map(), history: new Map() };
+            optimizedData.rcaCodeByName = new Map();
+            optimizedData.rcaNameByCode = new Map();
+            optimizedData.productPastaMap = new Map();
+            const supervisorToRcaMap = new Map();
+            const workingDaysSet = new Set();
+
+            const processDatasetForIndices = (data, indexSet, dataMap, isHistory) => {
+                const { bySupervisor, byRca, byPasta, bySupplier, byClient, byPosition, byRede, byTipoVenda, byProduct, byCity, byFilial } = indexSet;
+
+                data.forEach((sale, i) => {
+                    if (sale.DTPED && typeof sale.DTPED === 'string') sale.DTPED = parseDate(sale.DTPED);
+                    if (sale.DTSAIDA && typeof sale.DTSAIDA === 'string') sale.DTSAIDA = parseDate(sale.DTSAIDA);
+
+                    try {
+                        if (sale.CODCLI !== americanasCodCli) {
+                            const currentSellerCode = clientToCurrentSellerMap.get(sale.CODCLI);
                             if (currentSellerCode) {
                                 const sellerDetails = sellerDetailsMap.get(currentSellerCode);
                                 if (sellerDetails) {
@@ -967,263 +953,85 @@
                                 }
                             }
                         }
-                        
-                        // Final check for nulls after potential remapping
-                        sale.SUPERV = sale.SUPERV || 'N/A';
-                        sale.NOME = sale.NOME || 'N/A';
-
-                        // 3. Parse Dates Once
-                        // Converts string dates to Date objects in-place to avoid repetitive parsing
-                        if (sale.DTPED && typeof sale.DTPED === 'string') {
-                            sale.DTPED = parseDate(sale.DTPED);
-                        }
-                        if (sale.DTSAIDA && typeof sale.DTSAIDA === 'string') {
-                            sale.DTSAIDA = parseDate(sale.DTSAIDA);
-                        }
+                    } catch(e) {
+                        console.warn('Error remapping seller for sale:', sale, e);
                     }
-                };
 
-                processSalesDataInPlace(allSalesData);
-                processSalesDataInPlace(allHistoryData);
-                processSalesDataInPlace(aggregatedOrders);
+                    sale.SUPERV = sale.SUPERV || 'N/A';
+                    sale.NOME = sale.NOME || 'N/A';
 
-            } catch (e) {
-                console.error("Erro na inicialização otimizada:", e);
-            }
+                    const id = `${isHistory ? 'h' : 'c'}_${i}`;
+                    dataMap.set(id, sale);
 
-            // 3. Build optimized indices
-            optimizedData.rcasBySupervisor = new Map();
-            const supervisorToRcaMap = new Map();
-            const populateSupervisorMap = (sale) => {
-                 if (sale.CODUSUR && sale.SUPERV) {
-                    if (!supervisorToRcaMap.has(sale.SUPERV)) {
-                        supervisorToRcaMap.set(sale.SUPERV, new Set());
+                    const supervisor = sale.SUPERV, rca = sale.NOME, pasta = sale.OBSERVACAOFOR || 'N/A', supplier = sale.CODFOR;
+                    const client = sale.CODCLI, position = sale.POSICAO || 'N/A', rede = clientRamoMap.get(client) || 'N/A';
+                    const tipoVenda = sale.TIPOVENDA, product = sale.PRODUTO, city = (sale.CIDADE || 'N/A').toLowerCase(), filial = sale.FILIAL;
+                    
+                    if (!bySupervisor.has(supervisor)) bySupervisor.set(supervisor, new Set()); bySupervisor.get(supervisor).add(id);
+                    if (!byRca.has(rca)) byRca.set(rca, new Set()); byRca.get(rca).add(id);
+                    if (!byPasta.has(pasta)) byPasta.set(pasta, new Set()); byPasta.get(pasta).add(id);
+                    if (supplier && !bySupplier.has(supplier)) bySupplier.set(supplier, new Set()); if (supplier) bySupplier.get(supplier).add(id);
+                    if (client && !byClient.has(client)) byClient.set(client, new Set()); if (client) byClient.get(client).add(id);
+                    if (byTipoVenda && tipoVenda && !byTipoVenda.has(tipoVenda)) byTipoVenda.set(tipoVenda, new Set()); if (byTipoVenda && tipoVenda) byTipoVenda.get(tipoVenda).add(id);
+                    if (byPosition && position && !byPosition.has(position)) byPosition.set(position, new Set()); if (byPosition && position) byPosition.get(position).add(id);
+                    if (byRede && rede && !byRede.has(rede)) byRede.set(rede, new Set()); if (byRede && rede) byRede.get(rede).add(id);
+                    if (byProduct && product && !byProduct.has(product)) byProduct.set(product, new Set()); if (byProduct && product) byProduct.get(product).add(id);
+                    if (byCity && city && !byCity.has(city)) byCity.set(city, new Set()); if (byCity && city) byCity.get(city).add(id);
+                    if (byFilial && filial && !byFilial.has(filial)) byFilial.set(filial, new Set()); if (byFilial && filial) byFilial.get(filial).add(id);
+
+                    if (sale.CODUSUR && supervisor) { if (!supervisorToRcaMap.has(supervisor)) supervisorToRcaMap.set(supervisor, new Set()); supervisorToRcaMap.get(supervisor).add(sale.CODUSUR); }
+                    if (supplier && product) { if (!optimizedData.productsBySupplier.has(supplier)) optimizedData.productsBySupplier.set(supplier, new Set()); optimizedData.productsBySupplier.get(supplier).add(product); }
+                    if (rca && sale.CODUSUR) { optimizedData.rcaCodeByName.set(rca, sale.CODUSUR); optimizedData.rcaNameByCode.set(sale.CODUSUR, rca); }
+                    if (client && filial) { clientLastBranch.set(client, filial); }
+                    if (product && pasta && !optimizedData.productPastaMap.has(product)) { optimizedData.productPastaMap.set(product, pasta); }
+
+                    const date = sale.DTPED;
+                    if (date) { const dayOfWeek = date.getUTCDay(); if (dayOfWeek >= 1 && dayOfWeek <= 5) workingDaysSet.add(date.toISOString().split('T')[0]); }
+
+                    if (product) {
+                        const targetMap = isHistory ? optimizedData.salesByProduct.history : optimizedData.salesByProduct.current;
+                        if (!targetMap.has(product)) targetMap.set(product, []);
+                        targetMap.get(product).push(sale);
                     }
-                    supervisorToRcaMap.get(sale.SUPERV).add(sale.CODUSUR);
-                }
+                });
             };
-            allSalesData.forEach(populateSupervisorMap);
-            allHistoryData.forEach(populateSupervisorMap);
+
+            processDatasetForIndices(allSalesData, optimizedData.indices.current, optimizedData.salesById, false);
+            processDatasetForIndices(allHistoryData, optimizedData.indices.history, optimizedData.historyById, true);
 
             supervisorToRcaMap.forEach((rcas, supervisor) => {
                 optimizedData.rcasBySupervisor.set(supervisor, Array.from(rcas));
             });
 
-            optimizedData.productsBySupplier = new Map();
-            const populateProductMap = (sale) => {
-                if (sale.CODFOR && sale.PRODUTO) {
-                    const codfor = sale.CODFOR;
-                    if (!optimizedData.productsBySupplier.has(codfor)) {
-                        optimizedData.productsBySupplier.set(codfor, new Set());
-                    }
-                    optimizedData.productsBySupplier.get(codfor).add(sale.PRODUTO);
-                }
-            };
-            allSalesData.forEach(populateProductMap);
-            allHistoryData.forEach(populateProductMap);
-
-
-            optimizedData.salesByProduct = { current: new Map(), history: new Map() };
-            allSalesData.forEach(sale => {
-                if (sale.PRODUTO) {
-                    if (!optimizedData.salesByProduct.current.has(sale.PRODUTO)) {
-                        optimizedData.salesByProduct.current.set(sale.PRODUTO, []);
-                    }
-                    optimizedData.salesByProduct.current.get(sale.PRODUTO).push(sale);
-                }
-            });
-            allHistoryData.forEach(sale => {
-                if (sale.PRODUTO) {
-                    if (!optimizedData.salesByProduct.history.has(sale.PRODUTO)) {
-                        optimizedData.salesByProduct.history.set(sale.PRODUTO, []);
-                    }
-                    optimizedData.salesByProduct.history.get(sale.PRODUTO).push(sale);
-                }
-            });
-
-            optimizedData.rcaCodeByName = new Map();
-            optimizedData.rcaNameByCode = new Map();
-            const populateRcaMap = (s) => {
-                if(s.NOME && s.CODUSUR) {
-                    optimizedData.rcaCodeByName.set(s.NOME, s.CODUSUR);
-                    optimizedData.rcaNameByCode.set(s.CODUSUR, s.NOME);
-                }
-            };
-            allSalesData.forEach(populateRcaMap);
-            allHistoryData.forEach(populateRcaMap);
-
-            [...allSalesData, ...allHistoryData].forEach(sale => {
-                if (sale.CODCLI && sale.FILIAL) {
-                    clientLastBranch.set(sale.CODCLI, sale.FILIAL);
-                }
-            });
-
-            const buildIndex = (data, indexSet, dataMap) => {
-                const { bySupervisor, byRca, byPasta, bySupplier, byClient, byPosition, byRede, byTipoVenda, byProduct, byCity, byFilial } = indexSet;
-                
-                data.forEach((sale, index) => {
-                    const id = dataMap.size;
-                    dataMap.set(id, sale);
-
-                    const supervisor = sale.SUPERV;
-                    const rca = sale.NOME;
-                    const pasta = sale.OBSERVACAOFOR || 'N/A';
-                    const supplier = sale.CODFOR;
-                    const client = sale.CODCLI;
-                    const position = sale.POSICAO || 'N/A';
-                    const rede = clientRamoMap.get(client) || 'N/A';
-                    const tipoVenda = sale.TIPOVENDA;
-                    const product = sale.PRODUTO;
-                    const city = (sale.CIDADE || 'N/A').toLowerCase();
-                    const filial = sale.FILIAL;
-
-                    if (!bySupervisor.has(supervisor)) bySupervisor.set(supervisor, new Set());
-                    bySupervisor.get(supervisor).add(id);
-
-                    if (!byRca.has(rca)) byRca.set(rca, new Set());
-                    byRca.get(rca).add(id);
-
-                    if (!byPasta.has(pasta)) byPasta.set(pasta, new Set());
-                    byPasta.get(pasta).add(id);
-
-                    if (!bySupplier.has(supplier)) bySupplier.set(supplier, new Set());
-                    bySupplier.get(supplier).add(id);
-
-                    if (!byClient.has(client)) byClient.set(client, new Set());
-                    byClient.get(client).add(id);
-
-                    if (byTipoVenda) {
-                        if (!byTipoVenda.has(tipoVenda)) byTipoVenda.set(tipoVenda, new Set());
-                        byTipoVenda.get(tipoVenda).add(id);
-                    }
-
-                    if (byPosition) {
-                        if (!byPosition.has(position)) byPosition.set(position, new Set());
-                        byPosition.get(position).add(id);
-                    }
-                    
-                    if (byRede) {
-                         if (!byRede.has(rede)) byRede.set(rede, new Set());
-                         byRede.get(rede).add(id);
-                    }
-
-                    if (byProduct) {
-                        if (!byProduct.has(product)) byProduct.set(product, new Set());
-                        byProduct.get(product).add(id);
-                    }
-
-                    if (byCity) {
-                        if (!byCity.has(city)) byCity.set(city, new Set());
-                        byCity.get(city).add(id);
-                    }
-
-                    if (byFilial && filial) {
-                        if (!byFilial.has(filial)) byFilial.set(filial, new Set());
-                        byFilial.get(filial).add(id);
+            try {
+                aggregatedOrders.forEach(sale => {
+                    if (sale.DTPED && typeof sale.DTPED === 'string') sale.DTPED = parseDate(sale.DTPED);
+                    if (sale.DTSAIDA && typeof sale.DTSAIDA === 'string') sale.DTSAIDA = parseDate(sale.DTSAIDA);
+                    if (sale.CODCLI !== americanasCodCli) {
+                        const currentSellerCode = clientToCurrentSellerMap.get(sale.CODCLI);
+                        if (currentSellerCode) {
+                            const sellerDetails = sellerDetailsMap.get(currentSellerCode);
+                            if (sellerDetails) {
+                                sale.CODUSUR = currentSellerCode;
+                                sale.NOME = sellerDetails.name;
+                                sale.SUPERV = sellerDetails.supervisor;
+                            }
+                        }
                     }
                 });
-            };
+            } catch(e) {
+                console.error("Error during seller remapping for aggregated orders", e);
+            }
 
-            buildIndex(allSalesData, optimizedData.indices.current, optimizedData.salesById);
-            buildIndex(allHistoryData, optimizedData.indices.history, optimizedData.historyById);
-
-
-            optimizedData.salesByClientAndRca_CurrentMonth = new Map();
-            allSalesData.forEach(s => {
-                if (s.VLVENDA > 0 && s.CODCLI && s.PRODUTO && s.CODUSUR) {
-                    if (!optimizedData.salesByClientAndRca_CurrentMonth.has(s.CODCLI)) {
-                        optimizedData.salesByClientAndRca_CurrentMonth.set(s.CODCLI, new Map());
-                    }
-                    const clientSales = optimizedData.salesByClientAndRca_CurrentMonth.get(s.CODCLI);
-                    if (!clientSales.has(s.PRODUTO)) {
-                        clientSales.set(s.PRODUTO, new Set());
-                    }
-                    clientSales.get(s.PRODUTO).add(s.CODUSUR);
-                }
-            });
-
-            const currentMonth = lastSaleDate.getUTCMonth();
-            const currentYear = lastSaleDate.getUTCFullYear();
-            const previousMonth = (currentMonth === 0) ? 11 : currentMonth - 1;
-            const previousMonthYear = (currentMonth === 0) ? currentYear - 1 : currentYear;
-
-            optimizedData.salesByClientAndRca_PreviousMonth = new Map();
-            allHistoryData.forEach(s => {
-                const saleDate = parseDate(s.DTPED);
-                if (s.VLVENDA > 0 && s.CODCLI && s.PRODUTO && s.CODUSUR && saleDate?.getUTCMonth() === previousMonth && saleDate?.getUTCFullYear() === previousMonthYear) {
-                     if (!optimizedData.salesByClientAndRca_PreviousMonth.has(s.CODCLI)) {
-                        optimizedData.salesByClientAndRca_PreviousMonth.set(s.CODCLI, new Map());
-                    }
-                    const clientSales = optimizedData.salesByClientAndRca_PreviousMonth.get(s.CODCLI);
-                    if (!clientSales.has(s.PRODUTO)) {
-                        clientSales.set(s.PRODUTO, new Set());
-                    }
-                    clientSales.get(s.PRODUTO).add(s.CODUSUR);
-                }
-            });
-
-            optimizedData.bonificationsByClientAndRca_CurrentMonth = new Map();
-            allSalesData.forEach(s => {
-                if (s.VLBONIFIC > 0 && s.CODCLI && s.PRODUTO && s.CODUSUR) {
-                    if (!optimizedData.bonificationsByClientAndRca_CurrentMonth.has(s.CODCLI)) {
-                        optimizedData.bonificationsByClientAndRca_CurrentMonth.set(s.CODCLI, new Map());
-                    }
-                    const clientBonuses = optimizedData.bonificationsByClientAndRca_CurrentMonth.get(s.CODCLI);
-                    if (!clientBonuses.has(s.PRODUTO)) {
-                        clientBonuses.set(s.PRODUTO, new Set());
-                    }
-                    clientBonuses.get(s.PRODUTO).add(s.CODUSUR);
-                }
-            });
-
-            optimizedData.bonificationsByClientAndRca_PreviousMonth = new Map();
-            allHistoryData.forEach(s => {
-                const saleDate = parseDate(s.DTPED);
-                if (s.VLBONIFIC > 0 && s.CODCLI && s.PRODUTO && s.CODUSUR && saleDate?.getUTCMonth() === previousMonth && saleDate?.getUTCFullYear() === previousMonthYear) {
-                     if (!optimizedData.bonificationsByClientAndRca_PreviousMonth.has(s.CODCLI)) {
-                        optimizedData.bonificationsByClientAndRca_PreviousMonth.set(s.CODCLI, new Map());
-                    }
-                    const clientBonuses = optimizedData.bonificationsByClientAndRca_PreviousMonth.get(s.CODCLI);
-                    if (!clientBonuses.has(s.PRODUTO)) {
-                        clientBonuses.set(s.PRODUTO, new Set());
-                    }
-                    clientBonuses.get(s.PRODUTO).add(s.CODUSUR);
-                }
-            });
-
-            const workingDaysSet = new Set();
-            const allSalesForDays = [...allSalesData, ...allHistoryData];
-            allSalesForDays.forEach(sale => {
-                const date = parseDate(sale.DTPED);
-                if (date) {
-                    const dayOfWeek = date.getUTCDay();
-                    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-                        workingDaysSet.add(date.toISOString().split('T')[0]);
-                    }
-                }
-            });
-        
             sortedWorkingDays = Array.from(workingDaysSet).sort((a, b) => new Date(a) - new Date(b));
-        
             maxWorkingDaysStock = workingDaysSet.size > 0 ? workingDaysSet.size : 1;
             customWorkingDaysStock = maxWorkingDaysStock;
-
-            optimizedData.productPastaMap = new Map();
-            const populatePastaMap = (sale) => {
-                if (sale.PRODUTO && sale.OBSERVACAOFOR && !optimizedData.productPastaMap.has(sale.PRODUTO)) {
-                    optimizedData.productPastaMap.set(sale.PRODUTO, sale.OBSERVACAOFOR);
-                }
-            };
-            allSalesData.forEach(populatePastaMap);
-            allHistoryData.forEach(populatePastaMap);
         
             setTimeout(() => {
                 const maxDaysLabel = document.getElementById('max-working-days-label');
-                if (maxDaysLabel) {
-                    maxDaysLabel.textContent = `(Máx: ${maxWorkingDaysStock})`;
-                }
-                 const daysInput = document.getElementById('stock-working-days-input');
-                 if(daysInput) daysInput.value = customWorkingDaysStock;
+                if (maxDaysLabel) maxDaysLabel.textContent = `(Máx: ${maxWorkingDaysStock})`;
+                const daysInput = document.getElementById('stock-working-days-input');
+                if(daysInput) daysInput.value = customWorkingDaysStock;
             }, 0);
         }
 
@@ -2028,73 +1836,67 @@
         function getCoverageFilteredData(options = {}) {
             const { excludeFilter = null } = options;
 
-            const isExcluded = (filterName) => {
-                if (Array.isArray(excludeFilter)) return excludeFilter.includes(filterName);
-                return excludeFilter === filterName;
-            };
-
-            // Use Sets for O(1) lookups
-            const sellersSet = new Set(selectedCoverageSellers);
+            // Define filter sets from UI state
+            const sellersNameSet = new Set(selectedCoverageSellers);
+            const supervisorsSet = new Set(selectedCoverageSupervisors);
+            const city = coverageCityFilter.value.trim().toLowerCase();
+            const filial = coverageFilialFilter.value;
             const suppliersSet = new Set(selectedCoverageSuppliers);
             const productsSet = new Set(selectedCoverageProducts);
             const tiposVendaSet = new Set(selectedCoverageTiposVenda);
-            const supervisorsSet = new Set(selectedCoverageSupervisors);
 
-            const city = coverageCityFilter.value.trim().toLowerCase();
-            const filial = coverageFilialFilter.value;
+            // --- Client Filtering (Universe for KPIs) ---
+            // This part still filters all clients, but it's necessary for the KPI denominator.
+            // The main optimization is ensuring the sales data filtering is fast.
+            let clients = allClientsData;
+            if (filial !== 'ambas' || supervisorsSet.size > 0 || sellersNameSet.size > 0 || city) {
+                const rcasOfSupervisor = new Set();
+                if (excludeFilter !== 'supervisor' && supervisorsSet.size > 0) {
+                    supervisorsSet.forEach(sup => {
+                        (optimizedData.rcasBySupervisor.get(sup) || []).forEach(rca => rcasOfSupervisor.add(rca));
+                    });
+                }
+                const rcasOfSellers = new Set();
+                if (excludeFilter !== 'seller' && sellersNameSet.size > 0) {
+                     sellersNameSet.forEach(sellerName => {
+                        const rcaCode = optimizedData.rcaCodeByName.get(sellerName);
+                        if (rcaCode) rcasOfSellers.add(rcaCode);
+                    });
+                }
+                clients = allClientsData.filter(c => {
+                    if (filial !== 'ambas' && clientLastBranch.get(c['Código']) !== filial) return false;
+                    if (rcasOfSupervisor.size > 0 && !c.rcas.some(rca => rcasOfSupervisor.has(rca))) return false;
+                    if (rcasOfSellers.size > 0 && !c.rcas.some(rca => rcasOfSellers.has(rca))) return false;
+                    if (excludeFilter !== 'city' && city && (!c.cidade || c.cidade.toLowerCase() !== city)) return false;
+                    return true;
+                });
+            }
+            const clientCodes = new Set(clients.map(c => c['Código']));
+
+            // --- Sales Filtering (Optimized via Indices) ---
+            const filters = {
+                supervisor: supervisorsSet,
+                seller: sellersNameSet,
+                supplier: suppliersSet,
+                product: productsSet,
+                tipoVenda: tiposVendaSet,
+                city: city,
+                filial: filial,
+                clientCodes: clientCodes // Pass client universe to correctly scope sales
+            };
+
+            let sales = getFilteredDataFromIndices(optimizedData.indices.current, optimizedData.salesById, filters, excludeFilter);
+            let history = getFilteredDataFromIndices(optimizedData.indices.history, optimizedData.historyById, filters, excludeFilter);
+
+            // Post-filtering for logic not supported by indices
             const unitPriceInput = document.getElementById('coverage-unit-price-filter');
             const unitPrice = unitPriceInput && unitPriceInput.value ? parseFloat(unitPriceInput.value) : null;
-
-            let clients = allClientsData;
-
-            if (filial !== 'ambas') {
-                clients = clients.filter(c => clientLastBranch.get(c['Código']) === filial);
-            }
-
-            if (!isExcluded('supervisor') && selectedCoverageSupervisors.length > 0) {
-                const rcasOfSupervisor = new Set();
-                selectedCoverageSupervisors.forEach(sup => {
-                    (optimizedData.rcasBySupervisor.get(sup) || []).forEach(rca => rcasOfSupervisor.add(rca));
-                });
-                clients = clients.filter(c => c.rcas.some(rca => rcasOfSupervisor.has(rca)));
-            }
-            if (!isExcluded('seller') && sellersSet.size > 0) {
-                const rcasOfSellers = new Set();
-                 sellersSet.forEach(sellerName => {
-                    const rcaCode = optimizedData.rcaCodeByName.get(sellerName);
-                    if (rcaCode) rcasOfSellers.add(rcaCode);
-                });
-                clients = clients.filter(c => c.rcas.some(rca => rcasOfSellers.has(rca)));
-            }
-            if (!isExcluded('city') && city) {
-                clients = clients.filter(c => c.cidade && c.cidade.toLowerCase() === city);
-            }
-
-            let sales = allSalesData;
-            let history = allHistoryData;
-
-            if (filial !== 'ambas') {
-                 sales = sales.filter(s => s.FILIAL === filial);
-                 history = history.filter(s => s.FILIAL === filial);
+            if (unitPrice !== null) {
+                const unitPriceFilter = s => (s.QTVENDA > 0 && Math.abs((s.VLVENDA / s.QTVENDA) - unitPrice) < 0.01);
+                sales = sales.filter(unitPriceFilter);
+                history = history.filter(unitPriceFilter);
             }
             
-            const salesFilter = s => 
-                (isExcluded('supervisor') || selectedCoverageSupervisors.length === 0 || supervisorsSet.has(s.SUPERV)) &&
-                (isExcluded('seller') || sellersSet.size === 0 || sellersSet.has(s.NOME)) &&
-                (isExcluded('supplier') || suppliersSet.size === 0 || suppliersSet.has(s.CODFOR)) &&
-                (isExcluded('product') || productsSet.size === 0 || productsSet.has(s.PRODUTO)) &&
-                (isExcluded('tipoVenda') || tiposVendaSet.size === 0 || tiposVendaSet.has(s.TIPOVENDA)) &&
-                (unitPrice === null || (s.QTVENDA > 0 && Math.abs((s.VLVENDA / s.QTVENDA) - unitPrice) < 0.01));
-                
-            sales = sales.filter(salesFilter);
-            history = history.filter(salesFilter);
-
-            // Apply client filters to sales data to support cascading filters correctly
-            const clientCodes = new Set(clients.map(c => c['Código']));
-            const clientFilter = s => clientCodes.has(s.CODCLI);
-            sales = sales.filter(clientFilter);
-            history = history.filter(clientFilter);
-
             return { sales, history, clients };
         }
         
