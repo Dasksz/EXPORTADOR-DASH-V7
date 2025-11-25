@@ -1760,9 +1760,9 @@
                 const codcli = client['Código'];
                 const brands = clientBrands.get(codcli) || new Set();
                 
-                // Determine Status based on "Buying ANY" (Positive)
-                const hasSalty = MIX_SALTY_CATEGORIES.some(b => brands.has(b));
-                const hasFoods = MIX_FOODS_CATEGORIES.some(b => brands.has(b));
+                // Determine Status based on "Buying ALL" (Strict Positive)
+                const hasSalty = MIX_SALTY_CATEGORIES.every(b => brands.has(b));
+                const hasFoods = MIX_FOODS_CATEGORIES.every(b => brands.has(b));
                 
                 if (hasSalty) positivadosSalty++;
                 if (hasFoods) positivadosFoods++;
@@ -1861,27 +1861,27 @@
             const checkIcon = `<svg class="w-4 h-4 text-green-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
             const dashIcon = `<span class="text-slate-600 text-xs">-</span>`;
 
+            const xIcon = `<svg class="w-3 h-3 text-red-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+
             document.getElementById('mix-table-body').innerHTML = tableData.slice(0, 500).map(row => {
-                let saltyCols = MIX_SALTY_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : dashIcon}</td>`).join('');
-                let foodsCols = MIX_FOODS_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : dashIcon}</td>`).join('');
+                let saltyCols = MIX_SALTY_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : xIcon}</td>`).join('');
+                let foodsCols = MIX_FOODS_CATEGORIES.map(b => `<td class="px-1 py-2 text-center border-l border-slate-700/50">${row.brands.has(b) ? checkIcon : xIcon}</td>`).join('');
                 
                 return `
                 <tr class="hover:bg-slate-700/50 border-b border-slate-700/50 last:border-0">
                     <td class="px-2 py-2 font-medium text-slate-300 text-xs">${row.codcli}</td>
                     <td class="px-2 py-2 text-xs truncate max-w-[150px]" title="${row.name}">${row.name}</td>
-                    <td class="px-2 py-2 text-xs text-slate-400 truncate max-w-[100px]">${row.vendedor}</td>
+                    <td class="px-2 py-2 text-xs text-slate-300 truncate max-w-[100px]">${row.city}</td>
+                    <td class="px-2 py-2 text-xs text-slate-400 truncate max-w-[100px]">${getFirstName(row.vendedor)}</td>
                     ${saltyCols}
                     ${foodsCols}
-                    <td class="px-2 py-2 text-xs border-l border-slate-700/50">
-                        ${row.missingText ? `<span class="text-red-400" title="Falta: ${row.missingText}">Falta: ${row.missingText}</span>` : '<span class="text-green-400 font-bold">MIX COMPLETO</span>'}
-                    </td>
                 </tr>
             `}).join('');
         }
 
         async function exportMixPDF() {
             const { jsPDF } = window.jspdf;
-            const doc = new jsPDF('landscape'); // Switch to landscape for wide table
+            const doc = new jsPDF('landscape'); 
             
             const supervisor = document.getElementById('mix-supervisor-filter-text').textContent;
             const vendedor = document.getElementById('mix-vendedor-filter-text').textContent;
@@ -1899,18 +1899,18 @@
             const saltyCols = MIX_SALTY_CATEGORIES.map(c => c.substring(0, 8)); // Truncate headers
             const foodsCols = MIX_FOODS_CATEGORIES.map(c => c.substring(0, 8));
             
-            const head = [['Cód', 'Cliente', 'Vendedor', ...saltyCols, ...foodsCols, 'Oportunidade']];
+            const head = [['Cód', 'Cliente', 'Cidade', 'Vendedor', ...saltyCols, ...foodsCols]];
             
             const body = mixTableDataForExport.map(row => {
-                const saltyCells = MIX_SALTY_CATEGORIES.map(b => row.brands.has(b) ? 'OK' : '-');
-                const foodsCells = MIX_FOODS_CATEGORIES.map(b => row.brands.has(b) ? 'OK' : '-');
+                const saltyCells = MIX_SALTY_CATEGORIES.map(b => row.brands.has(b) ? 'OK' : 'X');
+                const foodsCells = MIX_FOODS_CATEGORIES.map(b => row.brands.has(b) ? 'OK' : 'X');
                 return [
                     row.codcli,
                     row.name,
-                    row.vendedor,
+                    row.city || '',
+                    getFirstName(row.vendedor),
                     ...saltyCells,
-                    ...foodsCells,
-                    row.missingText || 'COMPLETO'
+                    ...foodsCells
                 ];
             });
 
@@ -1925,17 +1925,17 @@
                     0: { halign: 'left', cellWidth: 15 },
                     1: { halign: 'left', cellWidth: 40 },
                     2: { halign: 'left', cellWidth: 25 },
-                    [head[0].length - 1]: { textColor: [220, 38, 38], cellWidth: 'auto' } 
+                    3: { halign: 'left', cellWidth: 20 },
                 },
                 didParseCell: function(data) {
                     if (data.section === 'body') {
-                        // Colorize OK/Missing cells
+                        // Colorize OK/X cells
                         if (data.cell.raw === 'OK') {
                             data.cell.styles.textColor = [22, 163, 74]; // Green
                             data.cell.styles.fontStyle = 'bold';
                         }
-                        if (data.cell.raw === 'COMPLETO') {
-                            data.cell.styles.textColor = [22, 163, 74];
+                        if (data.cell.raw === 'X') {
+                            data.cell.styles.textColor = [220, 38, 38]; // Red
                             data.cell.styles.fontStyle = 'bold';
                         }
                     }
@@ -8032,16 +8032,16 @@
                                 </div>
                                 <div class="overflow-auto custom-scrollbar" style="max-height: 60vh;">
                                     <table class="min-w-full text-sm text-left text-slate-300">
-                                        <thead class="text-xs text-slate-400 uppercase sticky-header">
-                                            <tr>
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600">Cód</th>
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600">Cliente</th>
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600">Vendedor</th>
+                                        <thead class="text-xs text-slate-400 uppercase">
+                                            <tr style="position: sticky; top: 0; z-index: 20; background-color: #1d2347;">
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Cód</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Cliente</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Cidade</th>
+                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 text-left">Vendedor</th>
                                                 <th colspan="5" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800/50 text-teal-400">Mix Salty</th>
                                                 <th colspan="4" class="px-2 py-1 text-center border-b border-slate-600 border-l border-slate-600 bg-slate-800/50 text-yellow-400">Mix Foods</th>
-                                                <th rowspan="2" class="px-2 py-2 border-b border-slate-600 border-l border-slate-600">Oportunidades</th>
                                             </tr>
-                                            <tr>
+                                            <tr style="position: sticky; top: 37px; z-index: 20; background-color: #1d2347;">
                                                 <!-- Salty Subheaders -->
                                                 <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">CHEETOS</th>
                                                 <th class="px-1 py-1 text-center border-b border-slate-600 border-l border-slate-600 text-[10px]">DORITOS</th>
