@@ -5900,6 +5900,49 @@
             if (sidebarOverlay) sidebarOverlay.classList.toggle('hidden');
         }
 
+        function calculateMetasHistoricalData() {
+            const historicalDataByClient = {};
+            const historicalDataBySeller = {};
+
+            allHistoryData.forEach(sale => {
+                const productDetails = productDetailsMap.get(sale.PRODUTO);
+                let category = null;
+
+                for (const cat in METAS_CATEGORIES) {
+                    const { suppliers, brands } = METAS_CATEGORIES[cat];
+                    if (suppliers && suppliers.includes(sale.CODFOR)) {
+                        category = cat;
+                        break;
+                    }
+                    if (brands && productDetails && brands.some(brand => productDetails.descricao.toUpperCase().includes(brand))) {
+                        category = cat;
+                        break;
+                    }
+                }
+
+                if (category) {
+                    const clientID = sale.CODCLI;
+                    const sellerName = sale.NOME;
+
+                    if (!historicalDataByClient[clientID]) historicalDataByClient[clientID] = {};
+                    if (!historicalDataByClient[clientID][category]) historicalDataByClient[clientID][category] = { revenue: 0, volume: 0, mix: new Set() };
+
+                    if (!historicalDataBySeller[sellerName]) historicalDataBySeller[sellerName] = {};
+                    if (!historicalDataBySeller[sellerName][category]) historicalDataBySeller[sellerName][category] = { revenue: 0, volume: 0, mix: new Set() };
+
+                    historicalDataByClient[clientID][category].revenue += sale.VLVENDA;
+                    historicalDataByClient[clientID][category].volume += sale.TOTPESOLIQ;
+                    historicalDataByClient[clientID][category].mix.add(sale.PRODUTO);
+
+                    historicalDataBySeller[sellerName][category].revenue += sale.VLVENDA;
+                    historicalDataBySeller[sellerName][category].volume += sale.TOTPESOLIQ;
+                    historicalDataBySeller[sellerName][category].mix.add(sale.PRODUTO);
+                }
+            });
+
+            return { byClient: historicalDataByClient, bySeller: historicalDataBySeller };
+        }
+
         async function navigateTo(view) {
             const sideMenu = document.getElementById('side-menu');
             const sidebarOverlay = document.getElementById('sidebar-overlay');
@@ -6479,54 +6522,11 @@
                 }
             });
 
-            function calculateMetasHistoricalData() {
-                const historicalDataByClient = {};
-                const historicalDataBySeller = {};
-
-                allHistoryData.forEach(sale => {
-                    const productDetails = productDetailsMap.get(sale.PRODUTO);
-                    let category = null;
-
-                    for (const cat in METAS_CATEGORIES) {
-                        const { suppliers, brands } = METAS_CATEGORIES[cat];
-                        if (suppliers && suppliers.includes(sale.CODFOR)) {
-                            category = cat;
-                            break;
-                        }
-                        if (brands && productDetails && brands.some(brand => productDetails.descricao.toUpperCase().includes(brand))) {
-                            category = cat;
-                            break;
-                        }
-                    }
-
-                    if (category) {
-                        const clientID = sale.CODCLI;
-                        const sellerName = sale.NOME;
-
-                        if (!historicalDataByClient[clientID]) historicalDataByClient[clientID] = {};
-                        if (!historicalDataByClient[clientID][category]) historicalDataByClient[clientID][category] = { revenue: 0, volume: 0, mix: new Set() };
-
-                        if (!historicalDataBySeller[sellerName]) historicalDataBySeller[sellerName] = {};
-                        if (!historicalDataBySeller[sellerName][category]) historicalDataBySeller[sellerName][category] = { revenue: 0, volume: 0, mix: new Set() };
-
-                        historicalDataByClient[clientID][category].revenue += sale.VLVENDA;
-                        historicalDataByClient[clientID][category].volume += sale.TOTPESOLIQ;
-                        historicalDataByClient[clientID][category].mix.add(sale.PRODUTO);
-
-                        historicalDataBySeller[sellerName][category].revenue += sale.VLVENDA;
-                        historicalDataBySeller[sellerName][category].volume += sale.TOTPESOLIQ;
-                        historicalDataBySeller[sellerName][category].mix.add(sale.PRODUTO);
-                    }
-                });
-
-                return { byClient: historicalDataByClient, bySeller: historicalDataBySeller };
-            }
-
             function updateMetasGvView(category = 'EXTRUSADOS', globalGoals = { revenue: 2000000, volume: 45500, mix: 1250 }) {
                 const tableBody = document.querySelector("#page-gv tbody");
                 let tableHTML = "";
 
-                const clientData = Object.entries(historicalData.byClient).map(([clientID, clientCategories]) => {
+                const clientData = Object.entries(metasHistoricalData.byClient).map(([clientID, clientCategories]) => {
                     const clientInfo = clientMap.get(clientID);
                     const categoryData = clientCategories[category] || { revenue: 0, volume: 0, mix: new Set() };
                     return {
@@ -6577,7 +6577,7 @@
                 const supervisorSelect = document.querySelector("#page-sv select");
                 let tableHTML = "";
 
-                const supervisors = [...new Set(Object.values(historicalData.bySeller).flatMap(Object.keys).map(seller => {
+                const supervisors = [...new Set(Object.values(metasHistoricalData.bySeller).flatMap(Object.keys).map(seller => {
                     const rcaCode = optimizedData.rcaCodeByName.get(seller);
                     const sellerDetails = optimizedData.clientsByRca.get(rcaCode);
                     return sellerDetails ? sellerDetails[0].SUPERV : null;
@@ -6595,7 +6595,7 @@
                 const selectedSupervisor = supervisorSelect.value;
                 const sellerData = {};
 
-                Object.entries(historicalData.byClient).forEach(([clientID, clientCategories]) => {
+                Object.entries(metasHistoricalData.byClient).forEach(([clientID, clientCategories]) => {
                     const clientInfo = clientMap.get(clientID);
                     const sellerName = clientInfo ? (optimizedData.rcaNameByCode.get(clientInfo.rca1) || 'N/A') : 'N/A';
 
@@ -7295,6 +7295,49 @@
                 });
             });
 
+            function calculateMetasHistoricalData() {
+                const historicalDataByClient = {};
+                const historicalDataBySeller = {};
+
+                allHistoryData.forEach(sale => {
+                    const productDetails = productDetailsMap.get(sale.PRODUTO);
+                    let category = null;
+
+                    for (const cat in METAS_CATEGORIES) {
+                        const { suppliers, brands } = METAS_CATEGORIES[cat];
+                        if (suppliers && suppliers.includes(sale.CODFOR)) {
+                            category = cat;
+                            break;
+                        }
+                        if (brands && productDetails && brands.some(brand => productDetails.descricao.toUpperCase().includes(brand))) {
+                            category = cat;
+                            break;
+                        }
+                    }
+
+                    if (category) {
+                        const clientID = sale.CODCLI;
+                        const sellerName = sale.NOME;
+
+                        if (!historicalDataByClient[clientID]) historicalDataByClient[clientID] = {};
+                        if (!historicalDataByClient[clientID][category]) historicalDataByClient[clientID][category] = { revenue: 0, volume: 0, mix: new Set() };
+
+                        if (!historicalDataBySeller[sellerName]) historicalDataBySeller[sellerName] = {};
+                        if (!historicalDataBySeller[sellerName][category]) historicalDataBySeller[sellerName][category] = { revenue: 0, volume: 0, mix: new Set() };
+
+                        historicalDataByClient[clientID][category].revenue += sale.VLVENDA;
+                        historicalDataByClient[clientID][category].volume += sale.TOTPESOLIQ;
+                        historicalDataByClient[clientID][category].mix.add(sale.PRODUTO);
+
+                        historicalDataBySeller[sellerName][category].revenue += sale.VLVENDA;
+                        historicalDataBySeller[sellerName][category].volume += sale.TOTPESOLIQ;
+                        historicalDataBySeller[sellerName][category].mix.add(sale.PRODUTO);
+                    }
+                });
+
+                return { byClient: historicalDataByClient, bySeller: historicalDataBySeller };
+            }
+
             // Metas Event Listeners
             document.getElementById('nav-gv').addEventListener('click', () => switchPage('page-gv'));
             document.getElementById('nav-sv').addEventListener('click', () => switchPage('page-sv'));
@@ -7313,9 +7356,9 @@
                 });
             });
 
-            const metaRevenueInput = document.querySelector('#page-gv input[type="text"]:nth-child(1)');
-            const metaVolumeInput = document.querySelector('#page-gv input[type="text"]:nth-child(2)');
-            const metaMixInput = document.querySelector('#page-gv input[type="text"]:nth-child(3)');
+            const metaRevenueInput = document.getElementById('meta-revenue-input');
+            const metaVolumeInput = document.getElementById('meta-volume-input');
+            const metaMixInput = document.getElementById('meta-mix-input');
 
             const updateMetasViews = () => {
                 const goals = {
@@ -7328,9 +7371,11 @@
                 updateMetasSvView(activeCategory, goals);
             };
 
-            [metaRevenueInput, metaVolumeInput, metaMixInput].forEach(input => {
-                input.addEventListener('change', updateMetasViews);
-            });
+            if (metaRevenueInput && metaVolumeInput && metaMixInput) {
+                [metaRevenueInput, metaVolumeInput, metaMixInput].forEach(input => {
+                    input.addEventListener('change', updateMetasViews);
+                });
+            }
 
             document.querySelector("#page-sv tbody").addEventListener('input', () => {
                 const rows = document.querySelectorAll("#page-sv tbody tr");
@@ -8557,9 +8602,9 @@
                                         </div>
                                     </div>
                                     <div class="bg-[#1d2347] border border-slate-700 p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 shadow-sm rounded-b-xl mb-4 shrink-0 items-center">
-                                        <div class="lg:col-span-3 bg-blue-900/30 p-2 rounded-lg border border-blue-800/50"><label class="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Meta Faturamento (R$)</label><div class="flex gap-2"><input type="text" value="2.000.000,00" class="w-full bg-slate-800 border border-blue-700 text-blue-300 font-bold text-lg rounded px-3 py-1 focus:ring-2 focus:ring-blue-500 outline-none h-10"><button class="bg-blue-600 text-white px-3 rounded hover:bg-blue-700 transition shadow-sm h-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"/></svg></button></div></div>
-                                        <div class="lg:col-span-3 bg-orange-900/30 p-2 rounded-lg border border-orange-800/50"><label class="text-[10px] font-bold text-orange-400 uppercase mb-1 block">Meta Volume (TON)</label><div class="flex gap-2"><input type="text" value="45.500" class="w-full bg-slate-800 border border-orange-700 text-orange-300 font-bold text-lg rounded px-3 py-1 focus:ring-2 focus:ring-orange-500 outline-none h-10"><button class="bg-orange-500 text-white px-3 rounded hover:bg-orange-600 transition shadow-sm h-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"/></svg></button></div></div>
-                                        <div class="lg:col-span-3 bg-purple-900/30 p-2 rounded-lg border border-purple-800/50"><label class="text-[10px] font-bold text-purple-400 uppercase mb-1 block">Meta Mix (QTDE)</label><div class="flex gap-2"><input type="text" value="1.250" class="w-full bg-slate-800 border border-purple-700 text-purple-300 font-bold text-lg rounded px-3 py-1 focus:ring-2 focus:ring-purple-500 outline-none h-10"><button class="bg-purple-600 text-white px-3 rounded hover:bg-purple-700 transition shadow-sm h-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"/></svg></button></div></div>
+                                        <div class="lg:col-span-3 bg-blue-900/30 p-2 rounded-lg border border-blue-800/50"><label class="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Meta Faturamento (R$)</label><div class="flex gap-2"><input type="text" id="meta-revenue-input" value="2.000.000,00" class="w-full bg-slate-800 border border-blue-700 text-blue-300 font-bold text-lg rounded px-3 py-1 focus:ring-2 focus:ring-blue-500 outline-none h-10"><button class="bg-blue-600 text-white px-3 rounded hover:bg-blue-700 transition shadow-sm h-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"/></svg></button></div></div>
+                                        <div class="lg:col-span-3 bg-orange-900/30 p-2 rounded-lg border border-orange-800/50"><label class="text-[10px] font-bold text-orange-400 uppercase mb-1 block">Meta Volume (TON)</label><div class="flex gap-2"><input type="text" id="meta-volume-input" value="45.500" class="w-full bg-slate-800 border border-orange-700 text-orange-300 font-bold text-lg rounded px-3 py-1 focus:ring-2 focus:ring-orange-500 outline-none h-10"><button class="bg-orange-500 text-white px-3 rounded hover:bg-orange-600 transition shadow-sm h-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"/></svg></button></div></div>
+                                        <div class="lg:col-span-3 bg-purple-900/30 p-2 rounded-lg border border-purple-800/50"><label class="text-[10px] font-bold text-purple-400 uppercase mb-1 block">Meta Mix (QTDE)</label><div class="flex gap-2"><input type="text" id="meta-mix-input" value="1.250" class="w-full bg-slate-800 border border-purple-700 text-purple-300 font-bold text-lg rounded px-3 py-1 focus:ring-2 focus:ring-purple-500 outline-none h-10"><button class="bg-purple-600 text-white px-3 rounded hover:bg-purple-700 transition shadow-sm h-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"/></svg></button></div></div>
                                         <div class="lg:col-span-3 text-right"><span class="text-[10px] font-bold text-slate-400 uppercase block">Total Rateado</span><span class="text-xl font-bold text-emerald-400">100% Distribuído</span></div>
                                     </div>
                                     <div class="bg-[#1d2347] rounded-xl border border-slate-700 shadow-sm flex-1 overflow-hidden flex flex-col">
