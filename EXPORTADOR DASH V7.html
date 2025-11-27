@@ -1359,6 +1359,13 @@
         let mixTableDataForExport = [];
         let mixKpiMode = 'total'; // 'total' ou 'atendidos'
 
+        let currentGoalsSupplier = '708';
+        let goalsTableState = {
+            currentPage: 1,
+            itemsPerPage: 100,
+            filteredData: [],
+            totalPages: 1
+        };
         let selectedGoalsGvSupervisors = [];
         let selectedGoalsGvSellers = [];
         let selectedGoalsSvSupervisors = [];
@@ -1907,19 +1914,12 @@
 
             let clients = allClientsData;
 
-            // Apply "Active" Filter: Americanas OR (RCA1 != 53 AND Sales This Month)
-            // Correction per instructions: "clientes cadastrados na planilha de clientes que tem o codigo do RCA 1 diferente de 53, isso depois da atribuição do vendedor americanas, ou seja, os clientes do vendedor americanas devem aparecer"
-            // Reusing the standard logic:
+            // Apply "Active" Filter logic
             clients = clients.filter(c => {
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
-                
-                // If Americanas, always include (rca1 is forced to 1001 in initialization)
                 if (isAmericanas) return true;
-                
-                // Otherwise, exclude RCA 53
                 if (rca1 === '53') return false;
-                
                 return true;
             });
 
@@ -1950,79 +1950,144 @@
             return clients;
         }
 
+        function parseInputMoney(id) {
+            const el = document.getElementById(id);
+            if (!el) return 0;
+            let val = el.value.replace(/\./g, '').replace(',', '.');
+            return parseFloat(val) || 0;
+        }
+
         function updateGoalsView() {
-            // Logic for "Sugestão GV"
             const filteredClients = getGoalsFilteredData();
             
-            // Calculate Quarterly Average for these clients
-            // Formula: Sum of VLVENDA (Type 1 & 9) in History / 3
-            // Optimization: We iterate history once or use indices?
-            // Since we need it for *filtered* clients, iterating history for each client might be slow if filtered list is large.
-            // Better: Iterate filtered History data? No, history index by client is fast.
-            
-            const quarterlyAvgs = [];
-            let totalAverageSum = 0;
+            const goalFat = parseInputMoney('goal-global-fat');
+            const goalVol = parseInputMoney('goal-global-vol');
+            const goalMix = parseInputMoney('goal-global-mix');
+
+            const clientMetrics = [];
+            let totalAvgFat = 0;
+            let totalAvgVol = 0;
+            let totalAvgMix = 0;
 
             filteredClients.forEach(client => {
                 const codCli = client['Código'];
-                
-                // Use history index for this client
                 const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
-                let clientTotal = 0;
                 
+                let sumFat = 0;
+                let sumVol = 0; 
+                const mixCounts = {}; 
+
                 if (clientHistoryIds) {
                     clientHistoryIds.forEach(id => {
                         const sale = optimizedData.historyById.get(id);
+                        
+                        // Filter by current supplier tab
+                        if (String(sale.CODFOR) !== currentGoalsSupplier) return;
+
                         if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
-                            clientTotal += sale.VLVENDA;
+                            sumFat += sale.VLVENDA;
+                            sumVol += sale.TOTPESOLIQ;
+                        }
+                        
+                        if (sale.VLVENDA > 0) {
+                            const d = parseDate(sale.DTPED);
+                            if (d) {
+                                const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+                                if (!mixCounts[monthKey]) mixCounts[monthKey] = new Set();
+                                mixCounts[monthKey].add(sale.PRODUTO);
+                            }
                         }
                     });
                 }
-                
-                const avg = clientTotal / QUARTERLY_DIVISOR;
-                if (avg > 0) {
-                    totalAverageSum += avg;
-                    
-                    // Resolve Seller Name
-                    let sellerName = 'N/A';
-                    const rcaCode = client.rcas[0];
-                    if (rcaCode) {
-                        sellerName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
-                    }
 
-                    quarterlyAvgs.push({
-                        cod: codCli,
-                        name: client.fantasia || client.razaoSocial,
-                        seller: sellerName,
-                        avg: avg
-                    });
+                const avgFat = sumFat / QUARTERLY_DIVISOR;
+                const avgVol = (sumVol / 1000) / QUARTERLY_DIVISOR; 
+                
+                let sumMix = 0;
+                Object.values(mixCounts).forEach(set => sumMix += set.size);
+                const avgMix = sumMix / QUARTERLY_DIVISOR;
+
+                if (avgFat > 0 || avgVol > 0 || avgMix > 0) {
+                    totalAvgFat += avgFat;
+                    totalAvgVol += avgVol;
+                    totalAvgMix += avgMix;
                 }
+                
+                // Add even if 0 to show them in the list (as they are active clients)
+                let sellerName = 'N/A';
+                const rcaCode = client.rcas[0];
+                if (rcaCode) sellerName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+
+                clientMetrics.push({
+                    cod: codCli,
+                    name: client.fantasia || client.razaoSocial,
+                    seller: sellerName,
+                    avgFat,
+                    avgVol,
+                    avgMix
+                });
             });
 
-            // Sort by Average Descending
-            quarterlyAvgs.sort((a, b) => b.avg - a.avg);
+            clientMetrics.forEach(m => {
+                m.shareFat = totalAvgFat > 0 ? (m.avgFat / totalAvgFat) : 0;
+                m.metaFat = m.shareFat * goalFat;
+                
+                m.shareVol = totalAvgVol > 0 ? (m.avgVol / totalAvgVol) : 0;
+                m.metaVol = m.shareVol * goalVol;
+                
+                m.shareMix = totalAvgMix > 0 ? (m.avgMix / totalAvgMix) : 0;
+                m.metaMix = m.shareMix * goalMix;
+            });
 
-            // Render Table
-            const rows = quarterlyAvgs.map(item => {
-                const percent = totalAverageSum > 0 ? (item.avg / totalAverageSum) * 100 : 0;
-                return `
-                    <tr class="hover:bg-slate-700/50 border-b border-slate-700 last:border-0">
-                        <td class="px-4 py-2 font-medium text-slate-300 text-xs">${item.cod}</td>
-                        <td class="px-4 py-2 text-xs truncate max-w-[200px]" title="${item.name}">${item.name}</td>
-                        <td class="px-4 py-2 text-xs text-slate-400">${getFirstName(item.seller)}</td>
-                        <td class="px-4 py-2 text-xs text-right font-medium text-slate-200">${item.avg.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                        <td class="px-4 py-2 text-xs text-right text-teal-400">${percent.toFixed(2)}%</td>
-                    </tr>
-                `;
-            }).join('');
+            clientMetrics.sort((a, b) => b.metaFat - a.metaFat);
 
-            if (quarterlyAvgs.length === 0) {
-                goalsGvTableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-slate-500">Nenhum cliente com histórico encontrado nos filtros.</td></tr>';
-            } else {
-                goalsGvTableBody.innerHTML = rows;
+            // Pagination Logic
+            goalsTableState.filteredData = clientMetrics;
+            goalsTableState.totalPages = Math.ceil(clientMetrics.length / goalsTableState.itemsPerPage);
+            if (goalsTableState.currentPage > goalsTableState.totalPages && goalsTableState.totalPages > 0) {
+                goalsTableState.currentPage = goalsTableState.totalPages;
+            } else if (goalsTableState.totalPages === 0) {
+                goalsTableState.currentPage = 1;
             }
 
-            goalsGvTotalValueEl.textContent = totalAverageSum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const startIndex = (goalsTableState.currentPage - 1) * goalsTableState.itemsPerPage;
+            const endIndex = startIndex + goalsTableState.itemsPerPage;
+            const pageData = clientMetrics.slice(startIndex, endIndex);
+
+            const paginationControls = document.getElementById('goals-pagination-controls');
+            const pageInfo = document.getElementById('goals-page-info-text');
+            const prevBtn = document.getElementById('goals-prev-page-btn');
+            const nextBtn = document.getElementById('goals-next-page-btn');
+
+            if (clientMetrics.length === 0) {
+                goalsGvTableBody.innerHTML = '<tr><td colspan="12" class="text-center p-4 text-slate-500">Nenhum cliente encontrado nos filtros para este fornecedor.</td></tr>';
+                if (paginationControls) paginationControls.classList.add('hidden');
+            } else {
+                const rows = pageData.map(item => `
+                    <tr class="hover:bg-slate-800 group transition-colors border-b border-slate-800">
+                        <td class="px-2 py-2 text-center border-r border-slate-800 bg-[#151c36] text-xs text-slate-300">${item.cod}</td>
+                        <td class="px-2 py-2 text-left border-r border-slate-800 bg-[#151c36] text-xs font-bold text-white truncate max-w-[200px]" title="${item.name}">${item.name.substring(0, 30)}</td>
+                        <td class="px-2 py-2 text-left border-r border-slate-800 bg-[#151c36] text-[10px] text-slate-400 uppercase">${getFirstName(item.seller)}</td>
+                        <td class="px-2 py-2 text-right text-slate-300 font-medium bg-blue-900/10 border-r border-slate-800/50 text-xs">${item.avgFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="px-2 py-2 text-center text-blue-400 text-xs bg-blue-900/10 border-r border-slate-800/50">${(item.shareFat * 100).toFixed(2)}%</td>
+                        <td class="px-2 py-2 text-right font-bold text-blue-200 bg-blue-900/20 border-r border-slate-800 text-xs">${item.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="px-2 py-2 text-right text-slate-300 font-medium bg-orange-900/10 border-r border-slate-800/50 text-xs">${item.avgVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
+                        <td class="px-2 py-2 text-center text-orange-400 text-xs bg-orange-900/10 border-r border-slate-800/50">${(item.shareVol * 100).toFixed(2)}%</td>
+                        <td class="px-2 py-2 text-right font-bold text-orange-200 bg-orange-900/20 border-r border-slate-800 text-xs">${item.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
+                        <td class="px-2 py-2 text-center text-slate-300 font-medium bg-purple-900/10 border-r border-slate-800/50 text-xs">${item.avgMix.toFixed(1)}</td>
+                        <td class="px-2 py-2 text-center text-purple-400 text-xs bg-purple-900/10 border-r border-slate-800/50">${(item.shareMix * 100).toFixed(2)}%</td>
+                        <td class="px-2 py-2 text-center font-bold text-purple-200 bg-purple-900/20 text-xs">${item.metaMix.toFixed(0)}</td>
+                    </tr>
+                `).join('');
+                goalsGvTableBody.innerHTML = rows;
+
+                if (paginationControls) {
+                    paginationControls.classList.remove('hidden');
+                    pageInfo.textContent = `Página ${goalsTableState.currentPage} de ${goalsTableState.totalPages} (Total: ${clientMetrics.length})`;
+                    prevBtn.disabled = goalsTableState.currentPage === 1;
+                    nextBtn.disabled = goalsTableState.currentPage === goalsTableState.totalPages;
+                }
+            }
         }
 
         function handleGoalsFilterChange() {
@@ -6985,6 +7050,11 @@
                 debouncedUpdateGoals();
             });
 
+            ['btn-distribute-fat', 'btn-distribute-vol', 'btn-distribute-mix'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.addEventListener('click', updateGoals);
+            });
+
             clearGoalsGvFiltersBtn.addEventListener('click', () => { resetGoalsGvFilters(); markDirty('goals'); });
 
             // SV Filters (Placeholder)
@@ -8108,34 +8178,89 @@
 
                         <!-- Ecrã Metas (Goals) -->
                         <div id="goals-view" class="hidden container mx-auto p-4 sm:p-6 lg:p-8">
+                            <!-- Header with Title and Tabs -->
                             <header class="mb-6 -mt-4 -mx-4 sm:-mt-6 sm:-mx-6 lg:-mt-8 lg:-mx-8 p-6 bg-gradient-to-r from-[#1e2a5a] to-[#0d1126] rounded-b-lg shadow-lg">
-                                <div class="flex items-center gap-4">
-                                    <button class="sidebar-toggle text-white focus:outline-none">
-                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                                    </button>
-                                    <div>
-                                        <h1 class="text-2xl font-bold text-white">PAINEL DE VENDAS - <span class="text-yellow-300">PRIME</span> DISTRIBUIÇÃO</h1>
-                                        <p class="text-lg text-slate-300 -mt-1">Gestão de Metas</p>
+                                <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                                    <div class="flex items-center gap-4">
+                                        <button class="sidebar-toggle text-white focus:outline-none">
+                                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                                        </button>
+                                        <div>
+                                            <h1 class="text-2xl font-bold text-white">PAINEL DE VENDAS - <span class="text-yellow-300">PRIME</span> DISTRIBUIÇÃO</h1>
+                                            <p class="text-slate-300">Planejamento de Metas (GV & SV)</p>
+                                        </div>
+                                    </div>
+                                    <!-- Top Right Tabs -->
+                                    <div class="flex bg-[#161e3d] p-1 rounded-lg border border-slate-700" id="goals-tabs">
+                                        <button data-tab="gv" class="px-6 py-2 rounded-md text-sm font-bold transition-colors bg-slate-700 text-white shadow-sm border border-teal-500 text-teal-500 active" id="btn-tab-gv">1. Rateio Global (GV)</button>
+                                        <button data-tab="sv" class="px-6 py-2 rounded-md text-sm font-bold text-slate-400 hover:text-white transition-colors border border-transparent" id="btn-tab-sv">2. Fechamento (SV)</button>
                                     </div>
                                 </div>
                             </header>
 
-                            <!-- Tabs -->
-                            <div class="mb-6 border-b border-slate-700">
-                                <ul class="flex flex-wrap -mb-px text-sm font-medium text-center" id="goals-tabs">
-                                    <li class="mr-2">
-                                        <button class="inline-block p-4 rounded-t-lg border-b-2 border-teal-500 text-teal-500 active" data-tab="gv">Sugestão GV</button>
-                                    </li>
-                                    <li class="mr-2">
-                                        <button class="inline-block p-4 rounded-t-lg border-b-2 border-transparent hover:text-slate-300 hover:border-slate-300 text-slate-400" data-tab="sv">Meta SV</button>
-                                    </li>
-                                </ul>
-                            </div>
-
                             <!-- Tab Content: Sugestão GV -->
                             <div id="goals-gv-content">
-                                <div class="mb-6 p-4 bg-[#1d2347] rounded-lg shadow-sm border border-slate-700">
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                                <!-- Category Selection Toggles -->
+                                <div class="flex flex-col gap-4 mb-6">
+                                    <div class="flex gap-4">
+                                        <button class="px-8 py-3 bg-[#0d9488] text-white font-bold rounded hover:bg-teal-700 transition-colors uppercase tracking-wider text-sm shadow-lg border border-teal-500/50">ELMA CHIPS</button>
+                                        <button class="px-8 py-3 bg-[#334155] text-slate-400 font-bold rounded hover:bg-slate-700 transition-colors uppercase tracking-wider text-sm border border-slate-700">FOODS</button>
+                                    </div>
+                                    <!-- Sub-tabs -->
+                                    <div class="flex border-b border-slate-700 overflow-x-auto" id="goals-sub-tabs">
+                                        <button data-supplier="708" class="goals-sub-tab px-6 py-3 text-teal-400 font-bold text-sm border-b-2 border-teal-400 flex items-center gap-2 whitespace-nowrap active">
+                                            <span class="w-2 h-2 rounded-full bg-teal-400 inline-block indicator"></span> EXTRUSADOS
+                                        </button>
+                                        <button data-supplier="707" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">NÃO EXTRUSADOS</button>
+                                        <button data-supplier="752" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">TORCIDA</button>
+                                    </div>
+                                </div>
+
+                                <!-- Meta Input Cards -->
+                                <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6 bg-[#161e3d] p-4 rounded-lg border border-slate-700/50">
+                                    <!-- Faturamento Card -->
+                                    <div class="bg-[#1e2a5a] border border-blue-900/50 rounded-lg p-3 relative overflow-hidden group">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                                        <label class="text-[10px] font-bold text-blue-300 uppercase tracking-wider mb-1 block">META FATURAMENTO (R$)</label>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="goal-global-fat" class="w-full bg-[#0f172a] border border-blue-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-blue-500" value="2.000.000,00">
+                                            <button id="btn-distribute-fat" class="bg-blue-600 hover:bg-blue-500 text-white px-3 rounded flex items-center justify-center transition-colors">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- Volume Card -->
+                                    <div class="bg-[#3c2a21] border border-orange-900/50 rounded-lg p-3 relative overflow-hidden group">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-orange-500"></div>
+                                        <label class="text-[10px] font-bold text-orange-300 uppercase tracking-wider mb-1 block">META VOLUME (TON)</label>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="goal-global-vol" class="w-full bg-[#0f172a] border border-orange-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-orange-500" value="45.500">
+                                            <button id="btn-distribute-vol" class="bg-orange-600 hover:bg-orange-500 text-white px-3 rounded flex items-center justify-center transition-colors">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- Mix Card -->
+                                    <div class="bg-[#3b0764] border border-purple-900/50 rounded-lg p-3 relative overflow-hidden group">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
+                                        <label class="text-[10px] font-bold text-purple-300 uppercase tracking-wider mb-1 block">META MIX (QTDE)</label>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="goal-global-mix" class="w-full bg-[#0f172a] border border-purple-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-purple-500" value="1.250">
+                                            <button id="btn-distribute-mix" class="bg-purple-600 hover:bg-purple-500 text-white px-3 rounded flex items-center justify-center transition-colors">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- Summary -->
+                                    <div class="flex flex-col justify-center items-end text-right pr-4">
+                                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TOTAL RATEADO</p>
+                                        <p class="text-2xl font-bold text-green-400">100% Distribuído</p>
+                                    </div>
+                                </div>
+
+                                <!-- Filters -->
+                                <div class="mb-4 p-4 bg-[#1d2347] rounded-lg shadow-sm border border-slate-700">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
                                         <div class="relative">
                                             <label for="goals-gv-supervisor-filter-btn" class="block mb-2 text-sm font-medium text-slate-400">Supervisor</label>
                                             <button id="goals-gv-supervisor-filter-btn" class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg p-2.5 text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-teal-500">
@@ -8160,28 +8285,44 @@
                                     </div>
                                 </div>
 
-                                <div class="bg-[#1d2347] p-4 rounded-lg border border-slate-700 shadow-sm">
-                                    <h2 class="text-lg font-semibold text-white mb-4">Sugestão de Metas (Base Trimestral)</h2>
+                                <!-- Main Table -->
+                                <div class="bg-[#1d2347] border border-slate-700 shadow-sm rounded-lg overflow-hidden">
                                     <div class="overflow-auto custom-scrollbar" style="max-height: 60vh;">
-                                        <table class="min-w-full text-sm text-left text-slate-300">
-                                            <thead class="text-xs text-slate-400 uppercase sticky top-0 z-20 bg-slate-800">
-                                                <tr>
-                                                    <th class="px-4 py-3 border-b border-slate-500">Cód. Cliente</th>
-                                                    <th class="px-4 py-3 border-b border-slate-500">Nome Cliente</th>
-                                                    <th class="px-4 py-3 border-b border-slate-500">Vendedor</th>
-                                                    <th class="px-4 py-3 border-b border-slate-500 text-right">Média Trimestral (R$)</th>
-                                                    <th class="px-4 py-3 border-b border-slate-500 text-right">% Repres.</th>
+                                        <table class="min-w-full text-sm text-left text-slate-300 border-collapse">
+                                            <thead class="text-xs uppercase sticky top-0 z-20">
+                                                <tr class="bg-[#0f172a] text-slate-400 border-b border-slate-700">
+                                                    <th rowspan="2" class="px-2 py-2 text-center w-16 bg-[#0f172a] border-r border-slate-700">CÓD</th>
+                                                    <th rowspan="2" class="px-3 py-2 text-left w-48 bg-[#0f172a] border-r border-slate-700">CLIENTE</th>
+                                                    <th rowspan="2" class="px-3 py-2 text-left w-24 bg-[#0f172a] border-r border-slate-700">VENDEDOR</th>
+                                                    <th colspan="3" class="px-2 py-1 text-center bg-blue-900/30 text-blue-400 border-r border-slate-700 border-b border-blue-900/50">FATURAMENTO (R$)</th>
+                                                    <th colspan="3" class="px-2 py-1 text-center bg-orange-900/30 text-orange-400 border-r border-slate-700 border-b border-orange-900/50">VOLUME (TON)</th>
+                                                    <th colspan="3" class="px-2 py-1 text-center bg-purple-900/30 text-purple-400 border-b border-purple-900/50">MIX (POSIT)</th>
+                                                </tr>
+                                                <tr class="bg-[#1e293b] text-slate-300 border-b border-slate-700 text-[10px]">
+                                                    <!-- Fat Headers -->
+                                                    <th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-300 border-r border-slate-700/50">MÉDIA</th>
+                                                    <th class="px-2 py-2 text-center w-16 bg-blue-900/20 text-blue-300 border-r border-slate-700/50">% SHARE</th>
+                                                    <th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-100 font-bold border-r border-slate-700">META AUTO</th>
+                                                    <!-- Vol Headers -->
+                                                    <th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-300 border-r border-slate-700/50">MÉDIA KG</th>
+                                                    <th class="px-2 py-2 text-center w-16 bg-orange-900/20 text-orange-300 border-r border-slate-700/50">% SHARE</th>
+                                                    <th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-100 font-bold border-r border-slate-700">META KG</th>
+                                                    <!-- Mix Headers -->
+                                                    <th class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 border-r border-slate-700/50">MÉDIA</th>
+                                                    <th class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 border-r border-slate-700/50">% SHARE</th>
+                                                    <th class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-100 font-bold">META MIX</th>
                                                 </tr>
                                             </thead>
-                                            <tbody id="goals-gv-table-body" class="divide-y divide-slate-700"></tbody>
-                                            <tfoot class="bg-slate-800 font-bold sticky bottom-0 z-20">
-                                                <tr>
-                                                    <td colspan="3" class="px-4 py-3 text-right text-white border-t border-slate-500">TOTAL:</td>
-                                                    <td id="goals-gv-total-value" class="px-4 py-3 text-right text-teal-400 border-t border-slate-500">R$ 0,00</td>
-                                                    <td class="px-4 py-3 text-right text-white border-t border-slate-500">100%</td>
-                                                </tr>
-                                            </tfoot>
+                                            <tbody id="goals-gv-table-body" class="divide-y divide-slate-800 bg-[#151c36]">
+                                                <!-- Rows will be populated by JS -->
+                                            </tbody>
                                         </table>
+                                    </div>
+                                    <!-- Pagination Controls -->
+                                    <div id="goals-pagination-controls" class="hidden flex justify-between items-center p-4 bg-[#161e3d] border-t border-slate-700">
+                                        <button id="goals-prev-page-btn" class="bg-slate-700 border border-slate-600 hover:bg-slate-600 text-slate-300 font-bold py-2 px-4 rounded-lg disabled:opacity-50 text-xs" disabled>Anterior</button>
+                                        <span id="goals-page-info-text" class="text-slate-400 text-xs">Página 1 de 1</span>
+                                        <button id="goals-next-page-btn" class="bg-slate-700 border border-slate-600 hover:bg-slate-600 text-slate-300 font-bold py-2 px-4 rounded-lg disabled:opacity-50 text-xs" disabled>Próxima</button>
                                     </div>
                                 </div>
                             </div>
