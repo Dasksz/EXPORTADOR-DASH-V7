@@ -2036,10 +2036,16 @@
                 m.metaVol = m.shareVol * goalVol;
                 
                 m.shareMix = totalAvgMix > 0 ? (m.avgMix / totalAvgMix) : 0;
-                m.metaMix = m.shareMix * goalMix;
+                // m.metaMix = m.shareMix * goalMix;
             });
 
             clientMetrics.sort((a, b) => b.metaFat - a.metaFat);
+
+            // Update Positivação Card with Client Count
+            const goalMixInput = document.getElementById('goal-global-mix');
+            if (goalMixInput) {
+                goalMixInput.value = clientMetrics.length.toLocaleString('pt-BR');
+            }
 
             // Pagination Logic
             goalsTableState.filteredData = clientMetrics;
@@ -2076,7 +2082,7 @@
                         <td class="px-2 py-2 text-right font-bold text-orange-200 bg-orange-900/20 border-r border-slate-800 text-xs">${item.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
                         <td class="px-2 py-2 text-center text-slate-300 font-medium bg-purple-900/10 border-r border-slate-800/50 text-xs">${item.avgMix.toFixed(1)}</td>
                         <td class="px-2 py-2 text-center text-purple-400 text-xs bg-purple-900/10 border-r border-slate-800/50">${(item.shareMix * 100).toFixed(2)}%</td>
-                        <td class="px-2 py-2 text-center font-bold text-purple-200 bg-purple-900/20 text-xs">${item.metaMix.toFixed(0)}</td>
+                        <td class="px-2 py-2 text-center font-bold text-purple-200 bg-purple-900/20 text-xs">1</td>
                     </tr>
                 `).join('');
                 goalsGvTableBody.innerHTML = rows;
@@ -6994,6 +7000,33 @@
 
             const debouncedUpdateGoals = debounce(updateGoals, 400);
 
+            // Sub-tabs Switching
+            const goalsSubTabs = document.getElementById('goals-sub-tabs');
+            if (goalsSubTabs) {
+                goalsSubTabs.addEventListener('click', (e) => {
+                    const btn = e.target.closest('.goals-sub-tab');
+                    if (!btn) return;
+
+                    document.querySelectorAll('.goals-sub-tab').forEach(b => {
+                        b.classList.remove('active', 'text-teal-400', 'font-bold', 'border-b-2', 'border-teal-400');
+                        b.classList.add('text-slate-400', 'font-medium');
+                        const indicator = b.querySelector('.indicator');
+                        if (indicator) indicator.remove();
+                    });
+
+                    btn.classList.remove('text-slate-400', 'font-medium');
+                    btn.classList.add('active', 'text-teal-400', 'font-bold', 'border-b-2', 'border-teal-400');
+                    
+                    const indicator = document.createElement('span');
+                    indicator.className = 'w-2 h-2 rounded-full bg-teal-400 inline-block indicator mr-2';
+                    btn.prepend(indicator);
+
+                    currentGoalsSupplier = btn.dataset.supplier;
+                    goalsTableState.currentPage = 1;
+                    updateGoals();
+                });
+            }
+
             // Tab Switching
             document.getElementById('goals-tabs').addEventListener('click', (e) => {
                 if (e.target.tagName === 'BUTTON') {
@@ -8243,7 +8276,7 @@
                                     <!-- Positivação Card -->
                                     <div class="bg-[#3b0764] border border-purple-900/50 rounded-lg p-3 relative overflow-hidden group">
                                         <div class="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
-                                        <label class="text-[10px] font-bold text-purple-300 uppercase tracking-wider mb-1 block">POSITIVAÇÃO</label>
+                                        <label class="text-[10px] font-bold text-purple-300 uppercase tracking-wider mb-1 block">Oportunidades</label>
                                         <div class="flex gap-2">
                                             <input type="text" id="goal-global-mix" class="w-full bg-[#0f172a] border border-purple-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-purple-500" value="0" readonly>
                                         </div>
@@ -8307,7 +8340,7 @@
                                                     <!-- Mix Headers -->
                                                     <th class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 border-r border-slate-700/50">MÉDIA</th>
                                                     <th class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 border-r border-slate-700/50">% SHARE</th>
-                                                    <th class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-100 font-bold">META MIX</th>
+                                                    <th class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-100 font-bold">Oportunidades</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="goals-gv-table-body" class="divide-y divide-slate-800 bg-[#151c36]">
