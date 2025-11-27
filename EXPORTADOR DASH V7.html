@@ -1359,7 +1359,7 @@
         let mixTableDataForExport = [];
         let mixKpiMode = 'total'; // 'total' ou 'atendidos'
 
-        let currentGoalsSupplier = '708';
+        let currentGoalsSupplier = '707';
         let goalsTableState = {
             currentPage: 1,
             itemsPerPage: 100,
@@ -1958,6 +1958,8 @@
         }
 
         function updateGoalsView() {
+            const filteredClients = getGoalsFilteredData();
+            
             const filteredClients = getGoalsFilteredData();
             
             const goalFat = parseInputMoney('goal-global-fat');
@@ -7050,7 +7052,7 @@
                 debouncedUpdateGoals();
             });
 
-            ['btn-distribute-fat', 'btn-distribute-vol', 'btn-distribute-mix'].forEach(id => {
+            ['btn-distribute-fat', 'btn-distribute-vol'].forEach(id => {
                 const btn = document.getElementById(id);
                 if (btn) btn.addEventListener('click', updateGoals);
             });
@@ -8208,10 +8210,10 @@
                                     </div>
                                     <!-- Sub-tabs -->
                                     <div class="flex border-b border-slate-700 overflow-x-auto" id="goals-sub-tabs">
-                                        <button data-supplier="708" class="goals-sub-tab px-6 py-3 text-teal-400 font-bold text-sm border-b-2 border-teal-400 flex items-center gap-2 whitespace-nowrap active">
+                                        <button data-supplier="707" class="goals-sub-tab px-6 py-3 text-teal-400 font-bold text-sm border-b-2 border-teal-400 flex items-center gap-2 whitespace-nowrap active">
                                             <span class="w-2 h-2 rounded-full bg-teal-400 inline-block indicator"></span> EXTRUSADOS
                                         </button>
-                                        <button data-supplier="707" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">NÃO EXTRUSADOS</button>
+                                        <button data-supplier="708" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">NÃO EXTRUSADOS</button>
                                         <button data-supplier="752" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">TORCIDA</button>
                                     </div>
                                 </div>
@@ -8240,15 +8242,12 @@
                                             </button>
                                         </div>
                                     </div>
-                                    <!-- Mix Card -->
+                                    <!-- Positivação Card -->
                                     <div class="bg-[#3b0764] border border-purple-900/50 rounded-lg p-3 relative overflow-hidden group">
                                         <div class="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
-                                        <label class="text-[10px] font-bold text-purple-300 uppercase tracking-wider mb-1 block">META MIX (QTDE)</label>
+                                        <label class="text-[10px] font-bold text-purple-300 uppercase tracking-wider mb-1 block">POSITIVAÇÃO</label>
                                         <div class="flex gap-2">
-                                            <input type="text" id="goal-global-mix" class="w-full bg-[#0f172a] border border-purple-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-purple-500" value="1.250">
-                                            <button id="btn-distribute-mix" class="bg-purple-600 hover:bg-purple-500 text-white px-3 rounded flex items-center justify-center transition-colors">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
-                                            </button>
+                                            <input type="text" id="goal-global-mix" class="w-full bg-[#0f172a] border border-purple-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-purple-500" value="0" readonly>
                                         </div>
                                     </div>
                                     <!-- Summary -->
