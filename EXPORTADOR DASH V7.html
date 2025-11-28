@@ -1379,19 +1379,22 @@
         let globalGoalsTotalsCache = {};
 
         function calculateGoalsMetrics() {
+            // Helper to init metrics structure
+            const createMetric = () => ({ 
+                fat: 0, vol: 0, prevFat: 0, prevVol: 0, 
+                prevClientsSet: new Set(), 
+                monthlyClientsSets: new Map() // Map<MonthKey, Set<CodCli>>
+            });
+
             globalGoalsMetrics = {
-                '707': { fat: 0, vol: 0, prevFat: 0, prevVol: 0 },
-                '708': { fat: 0, vol: 0, prevFat: 0, prevVol: 0 },
-                '752': { fat: 0, vol: 0, prevFat: 0, prevVol: 0 },
-                '1119_TODDYNHO': { fat: 0, vol: 0, prevFat: 0, prevVol: 0 },
-                '1119_TODDY': { fat: 0, vol: 0, prevFat: 0, prevVol: 0 },
-                '1119_QUAKER_KEROCOCO': { fat: 0, vol: 0, prevFat: 0, prevVol: 0 }
+                '707': createMetric(),
+                '708': createMetric(),
+                '752': createMetric(),
+                '1119_TODDYNHO': createMetric(),
+                '1119_TODDY': createMetric(),
+                '1119_QUAKER_KEROCOCO': createMetric()
             };
 
-            // Determine Previous Month relative to Last Sale Date
-            // lastSaleDate is derived from current sales file.
-            // If current sales are Oct, previous is Sept.
-            // We need to check history for Sept.
             const currentDate = lastSaleDate;
             const prevMonthDate = new Date(Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth() - 1, 1));
             const prevMonthIndex = prevMonthDate.getUTCMonth();
@@ -1412,27 +1415,52 @@
                 }
 
                 if (key && globalGoalsMetrics[key]) {
-                    // Only count valid sales types for revenue/volume goals (Standard Sales)
+                    const d = parseDate(sale.DTPED);
+                    const isPrevMonth = d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear;
+
+                    // 1. Revenue/Volume metrics (Types 1 & 9)
                     if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
-                        // Quarterly Sum (All history)
                         globalGoalsMetrics[key].fat += sale.VLVENDA;
                         globalGoalsMetrics[key].vol += sale.TOTPESOLIQ;
 
-                        // Previous Month Sum
-                        const d = parseDate(sale.DTPED);
-                        if (d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear) {
+                        if (isPrevMonth) {
                             globalGoalsMetrics[key].prevFat += sale.VLVENDA;
                             globalGoalsMetrics[key].prevVol += sale.TOTPESOLIQ;
+                        }
+                    }
+
+                    // 2. Client Metrics (Any positive sale)
+                    if (sale.VLVENDA > 0) {
+                        // Previous Month Clients
+                        if (isPrevMonth) {
+                            globalGoalsMetrics[key].prevClientsSet.add(sale.CODCLI);
+                        }
+                        
+                        // Monthly Clients for Quarterly Average
+                        if (d) {
+                            const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+                            if (!globalGoalsMetrics[key].monthlyClientsSets.has(monthKey)) {
+                                globalGoalsMetrics[key].monthlyClientsSets.set(monthKey, new Set());
+                            }
+                            globalGoalsMetrics[key].monthlyClientsSets.get(monthKey).add(sale.CODCLI);
                         }
                     }
                 }
             });
 
-            // Calculate Average for Quarter and Finalize
+            // Calculate Averages and Finalize
             for (const key in globalGoalsMetrics) {
-                globalGoalsMetrics[key].avgFat = globalGoalsMetrics[key].fat / QUARTERLY_DIVISOR;
-                globalGoalsMetrics[key].avgVol = (globalGoalsMetrics[key].vol / 1000) / QUARTERLY_DIVISOR; // Tons
-                globalGoalsMetrics[key].prevVol = globalGoalsMetrics[key].prevVol / 1000; // Tons
+                const m = globalGoalsMetrics[key];
+                
+                m.avgFat = m.fat / QUARTERLY_DIVISOR;
+                m.avgVol = (m.vol / 1000) / QUARTERLY_DIVISOR; // Tons
+                m.prevVol = m.prevVol / 1000; // Tons
+                
+                m.prevClients = m.prevClientsSet.size;
+                
+                let sumClients = 0;
+                m.monthlyClientsSets.forEach(set => sumClients += set.size);
+                m.avgClients = sumClients / QUARTERLY_DIVISOR;
             }
         }
         let selectedGoalsGvSupervisors = [];
@@ -7300,11 +7328,15 @@
                         const refPrevFat = document.getElementById('ref-prev-fat');
                         const refAvgVol = document.getElementById('ref-avg-vol');
                         const refPrevVol = document.getElementById('ref-prev-vol');
+                        const refAvgClients = document.getElementById('ref-avg-clients');
+                        const refPrevClients = document.getElementById('ref-prev-clients');
 
                         if(refAvgFat) refAvgFat.textContent = metrics.avgFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                         if(refPrevFat) refPrevFat.textContent = metrics.prevFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                         if(refAvgVol) refAvgVol.textContent = metrics.avgVol.toLocaleString('pt-BR', { minimumFractionDigits: 3 });
                         if(refPrevVol) refPrevVol.textContent = metrics.prevVol.toLocaleString('pt-BR', { minimumFractionDigits: 3 });
+                        if(refAvgClients) refAvgClients.textContent = metrics.avgClients.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+                        if(refPrevClients) refPrevClients.textContent = metrics.prevClients.toLocaleString('pt-BR');
 
                         // PRE-FILL logic: If target is 0 (uninitialized), use Previous Month values as default suggestion
                         if (target.fat === 0) target.fat = metrics.prevFat;
@@ -7911,10 +7943,14 @@
             const refPrevFat = document.getElementById('ref-prev-fat');
             const refAvgVol = document.getElementById('ref-avg-vol');
             const refPrevVol = document.getElementById('ref-prev-vol');
+            const refAvgClients = document.getElementById('ref-avg-clients');
+            const refPrevClients = document.getElementById('ref-prev-clients');
             if(refAvgFat) refAvgFat.textContent = defGoalsMetric.avgFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             if(refPrevFat) refPrevFat.textContent = defGoalsMetric.prevFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             if(refAvgVol) refAvgVol.textContent = defGoalsMetric.avgVol.toLocaleString('pt-BR', { minimumFractionDigits: 3 });
             if(refPrevVol) refPrevVol.textContent = defGoalsMetric.prevVol.toLocaleString('pt-BR', { minimumFractionDigits: 3 });
+            if(refAvgClients) refAvgClients.textContent = defGoalsMetric.avgClients.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+            if(refPrevClients) refPrevClients.textContent = defGoalsMetric.prevClients.toLocaleString('pt-BR');
         }
         // ----------------------------------------
 
@@ -8774,6 +8810,10 @@
                                         <label class="text-[10px] font-bold text-purple-300 uppercase tracking-wider mb-1 block">Oportunidades</label>
                                         <div class="flex gap-2">
                                             <input type="text" id="goal-global-mix" class="w-full bg-[#0f172a] border border-purple-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-purple-500" value="0" readonly>
+                                        </div>
+                                        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                                            <span>Média Trim: <span id="ref-avg-clients" class="text-white font-bold">0</span></span>
+                                            <span>Mês Ant: <span id="ref-prev-clients" class="text-white font-bold">0</span></span>
                                         </div>
                                     </div>
                                     <!-- Summary -->
