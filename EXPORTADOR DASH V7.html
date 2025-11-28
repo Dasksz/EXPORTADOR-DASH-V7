@@ -1400,51 +1400,69 @@
             const prevMonthIndex = prevMonthDate.getUTCMonth();
             const prevMonthYear = prevMonthDate.getUTCFullYear();
 
-            allHistoryData.forEach(sale => {
-                let key = null;
-                const codFor = String(sale.CODFOR);
+            // Filter clients to match the "Active Structure" definition (Same as Coverage/Goals Table)
+            const activeClients = allClientsData.filter(c => {
+                const rca1 = String(c.rca1 || '').trim();
+                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+                if (isAmericanas) return true;
+                if (rca1 === '53') return false;
+                return true;
+            });
+
+            activeClients.forEach(client => {
+                const codCli = client['Código'];
+                const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
                 
-                if (codFor === '707') key = '707';
-                else if (codFor === '708') key = '708';
-                else if (codFor === '752') key = '752';
-                else if (codFor === '1119') {
-                    const desc = normalize(sale.DESCRICAO || '');
-                    if (desc.includes('TODDYNHO')) key = '1119_TODDYNHO';
-                    else if (desc.includes('TODDY')) key = '1119_TODDY';
-                    else if (desc.includes('QUAKER') || desc.includes('KEROCOCO')) key = '1119_QUAKER_KEROCOCO';
-                }
-
-                if (key && globalGoalsMetrics[key]) {
-                    const d = parseDate(sale.DTPED);
-                    const isPrevMonth = d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear;
-
-                    // 1. Revenue/Volume metrics (Types 1 & 9)
-                    if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
-                        globalGoalsMetrics[key].fat += sale.VLVENDA;
-                        globalGoalsMetrics[key].vol += sale.TOTPESOLIQ;
-
-                        if (isPrevMonth) {
-                            globalGoalsMetrics[key].prevFat += sale.VLVENDA;
-                            globalGoalsMetrics[key].prevVol += sale.TOTPESOLIQ;
-                        }
-                    }
-
-                    // 2. Client Metrics (Any positive sale)
-                    if (sale.VLVENDA > 0) {
-                        // Previous Month Clients
-                        if (isPrevMonth) {
-                            globalGoalsMetrics[key].prevClientsSet.add(sale.CODCLI);
-                        }
+                if (clientHistoryIds) {
+                    clientHistoryIds.forEach(id => {
+                        const sale = optimizedData.historyById.get(id);
                         
-                        // Monthly Clients for Quarterly Average
-                        if (d) {
-                            const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
-                            if (!globalGoalsMetrics[key].monthlyClientsSets.has(monthKey)) {
-                                globalGoalsMetrics[key].monthlyClientsSets.set(monthKey, new Set());
-                            }
-                            globalGoalsMetrics[key].monthlyClientsSets.get(monthKey).add(sale.CODCLI);
+                        let key = null;
+                        const codFor = String(sale.CODFOR);
+                        
+                        if (codFor === '707') key = '707';
+                        else if (codFor === '708') key = '708';
+                        else if (codFor === '752') key = '752';
+                        else if (codFor === '1119') {
+                            const desc = normalize(sale.DESCRICAO || '');
+                            if (desc.includes('TODDYNHO')) key = '1119_TODDYNHO';
+                            else if (desc.includes('TODDY')) key = '1119_TODDY';
+                            else if (desc.includes('QUAKER') || desc.includes('KEROCOCO')) key = '1119_QUAKER_KEROCOCO';
                         }
-                    }
+
+                        if (key && globalGoalsMetrics[key]) {
+                            const d = parseDate(sale.DTPED);
+                            const isPrevMonth = d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear;
+
+                            // 1. Revenue/Volume metrics (Types 1 & 9)
+                            if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
+                                globalGoalsMetrics[key].fat += sale.VLVENDA;
+                                globalGoalsMetrics[key].vol += sale.TOTPESOLIQ;
+
+                                if (isPrevMonth) {
+                                    globalGoalsMetrics[key].prevFat += sale.VLVENDA;
+                                    globalGoalsMetrics[key].prevVol += sale.TOTPESOLIQ;
+                                }
+                            }
+
+                            // 2. Client Metrics (Any positive sale)
+                            if (sale.VLVENDA > 0) {
+                                // Previous Month Clients
+                                if (isPrevMonth) {
+                                    globalGoalsMetrics[key].prevClientsSet.add(sale.CODCLI);
+                                }
+                                
+                                // Monthly Clients for Quarterly Average
+                                if (d) {
+                                    const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+                                    if (!globalGoalsMetrics[key].monthlyClientsSets.has(monthKey)) {
+                                        globalGoalsMetrics[key].monthlyClientsSets.set(monthKey, new Set());
+                                    }
+                                    globalGoalsMetrics[key].monthlyClientsSets.get(monthKey).add(sale.CODCLI);
+                                }
+                            }
+                        }
+                    });
                 }
             });
 
@@ -6315,11 +6333,33 @@
             });
 
             const tableRows = [];
+            let totalFaturamento = 0;
+
             clientList.forEach(client => {
                 const clientData = [ client['Código'] || '', client.fantasia || client.razaoSocial || '', client.bairro || '', client.cidade || '', formatDate(client.ultimaCompra) || 'N/A' ];
-                if (includeFaturamento) clientData.splice(2, 0, (client.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+                if (includeFaturamento) {
+                    const val = client.total || 0;
+                    totalFaturamento += val;
+                    clientData.splice(2, 0, val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+                }
                 tableRows.push(clientData);
             });
+
+            if (includeFaturamento) {
+                const footerRow = [
+                    { content: 'TOTAL:', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, fillColor: [50, 50, 50], textColor: [255, 255, 255] } },
+                    { content: totalFaturamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fontStyle: 'bold', fontSize: 10, fillColor: [50, 50, 50], textColor: [50, 255, 100] } },
+                    { content: '', colSpan: 3, styles: { fillColor: [50, 50, 50] } }
+                ];
+                tableRows.push(footerRow);
+            } else {
+                const footerRow = [
+                    { content: 'TOTAL CLIENTES:', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, fillColor: [50, 50, 50], textColor: [255, 255, 255] } },
+                    { content: String(clientList.length), colSpan: 3, styles: { fontStyle: 'bold', fontSize: 10, fillColor: [50, 50, 50], textColor: [255, 255, 255] } }
+                ];
+                tableRows.push(footerRow);
+            }
+
             doc.autoTable({ head: [tableColumn], body: tableRows, startY: 60, theme: 'grid', styles: { fontSize: 8, cellPadding: 1.5, textColor: [0, 0, 0] }, headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [240, 248, 255] }, margin: { top: 10 } });
             const pageCount = doc.internal.getNumberOfPages();
             for(let i = 1; i <= pageCount; i++) { doc.setPage(i); doc.setFontSize(9); doc.setTextColor(10); doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' }); }
