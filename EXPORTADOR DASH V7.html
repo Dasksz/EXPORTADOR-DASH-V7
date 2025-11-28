@@ -7099,6 +7099,8 @@
                     if (checked) selectedGoalsGvSupervisors.push(value);
                     else selectedGoalsGvSupervisors = selectedGoalsGvSupervisors.filter(s => s !== value);
                     
+                    selectedGoalsGvSupervisors = updateSupervisorFilter(goalsGvSupervisorFilterDropdown, goalsGvSupervisorFilterText, selectedGoalsGvSupervisors, allSalesData, true);
+
                     // Reset sellers or keep intersection? 
                     // Standard: Update Seller Options based on Supervisor
                     selectedGoalsGvSellers = [];
@@ -7114,6 +7116,9 @@
                     const { value, checked } = e.target;
                     if (checked) selectedGoalsGvSellers.push(value);
                     else selectedGoalsGvSellers = selectedGoalsGvSellers.filter(s => s !== value);
+                    
+                    selectedGoalsGvSellers = updateSellerFilter(selectedGoalsGvSupervisors, goalsGvSellerFilterDropdown, goalsGvSellerFilterText, selectedGoalsGvSellers, allSalesData, true);
+                    
                     updateGoals();
                 }
             });
