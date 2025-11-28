@@ -2133,7 +2133,7 @@
                                 <p class="text-xl font-bold ${textColor} mb-2">
                                     ${target.fat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                 </p>
-                                <div class="flex justify-between text-[10px] text-slate-500 border-t border-slate-700/50 pt-1">
+                                <div class="flex justify-between text-[10px] text-slate-400 border-t border-slate-700/50 pt-1">
                                     <span>Trim: <span class="text-slate-300">${metrics.avgFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></span>
                                     <span>Ant: <span class="text-slate-300">${metrics.prevFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></span>
                                 </div>
@@ -2146,7 +2146,7 @@
                                 <p class="text-xl font-bold ${textColor} mb-2">
                                     ${target.vol.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                 </p>
-                                <div class="flex justify-between text-[10px] text-slate-500 border-t border-slate-700/50 pt-1">
+                                <div class="flex justify-between text-[10px] text-slate-400 border-t border-slate-700/50 pt-1">
                                     <span>Trim: <span class="text-slate-300">${metrics.avgVol.toLocaleString('pt-BR', { minimumFractionDigits: 3 })}</span></span>
                                     <span>Ant: <span class="text-slate-300">${metrics.prevVol.toLocaleString('pt-BR', { minimumFractionDigits: 3 })}</span></span>
                                 </div>
@@ -5218,14 +5218,6 @@
 
             // Tendency logic for Daily Chart
             if (useTendencyComparison) {
-                // Apply a simple heuristic: Distribute the "Remaining to Sell" based on historical weights?
-                // The previous logic was calculating historical weights. 
-                // That is expensive (looping history again).
-                // Simplified approach: Distribute remaining evenly or just zero out future days?
-                // The previous code did a heavy calculation.
-                // Let's skip the heavy historical weight calculation for now to gain speed, 
-                // and just project linear average for future days of CURRENT week.
-                
                 const today = lastSaleDate;
                 const currentWeekIndex = currentMonthWeeks.findIndex(w => today >= w.start && today <= w.end);
                 
