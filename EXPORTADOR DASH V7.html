@@ -4871,10 +4871,16 @@
             const currentClientsSet = new Map(); // Client -> Total Value (for Positive check)
 
             currentSales.forEach(s => {
-                metrics.current.fat += s.VLVENDA;
-                metrics.current.peso += s.TOTPESOLIQ;
+                // Filter: Only Type 1 and 9 count for Metrics (Fat/Peso/Charts)
+                const isValidType = (s.TIPOVENDA === '1' || s.TIPOVENDA === '9');
+
+                if (isValidType) {
+                    metrics.current.fat += s.VLVENDA;
+                    metrics.current.peso += s.TOTPESOLIQ;
+                }
                 
                 if (s.CODCLI) {
+                    // Accumulate for Positive Check (using VLVENDA which is 0 for non-1/9 anyway, but keeping consistent)
                     currentClientsSet.set(s.CODCLI, (currentClientsSet.get(s.CODCLI) || 0) + s.VLVENDA);
                     
                     if (!currentClientProductMap.has(s.CODCLI)) currentClientProductMap.set(s.CODCLI, new Map());
@@ -4884,14 +4890,14 @@
                 }
 
                 // Supervisor Data
-                if (s.SUPERV) {
+                if (s.SUPERV && isValidType) {
                     if (!metrics.charts.supervisorData[s.SUPERV]) metrics.charts.supervisorData[s.SUPERV] = { current: 0, history: 0 };
                     metrics.charts.supervisorData[s.SUPERV].current += s.VLVENDA;
                 }
 
                 // Weekly Chart (Current)
                 const d = parseDate(s.DTPED);
-                if (d) {
+                if (d && isValidType) {
                     const wIdx = currentMonthWeeks.findIndex(w => d >= w.start && d <= w.end);
                     if (wIdx !== -1) metrics.charts.weeklyCurrent[wIdx] += s.VLVENDA;
                 }
@@ -4944,8 +4950,13 @@
             const monthWeeksCache = new Map(); 
 
             historySales.forEach(s => {
-                metrics.history.fat += s.VLVENDA;
-                metrics.history.peso += s.TOTPESOLIQ;
+                // Filter: Only Type 1 and 9 count for Metrics (Fat/Peso/Charts)
+                const isValidType = (s.TIPOVENDA === '1' || s.TIPOVENDA === '9');
+
+                if (isValidType) {
+                    metrics.history.fat += s.VLVENDA;
+                    metrics.history.peso += s.TOTPESOLIQ;
+                }
 
                 const d = parseDate(s.DTPED);
                 if (!d) return;
@@ -4960,7 +4971,10 @@
                     });
                 }
                 const mData = historyMonths.get(monthKey);
-                mData.fat += s.VLVENDA;
+                
+                if (isValidType) {
+                    mData.fat += s.VLVENDA;
+                }
                 
                 if (s.CODCLI) {
                     mData.clients.set(s.CODCLI, (mData.clients.get(s.CODCLI) || 0) + s.VLVENDA);
@@ -4972,7 +4986,7 @@
                 }
 
                 // Supervisor History
-                if (s.SUPERV) {
+                if (s.SUPERV && isValidType) {
                     if (!metrics.charts.supervisorData[s.SUPERV]) metrics.charts.supervisorData[s.SUPERV] = { current: 0, history: 0 };
                     metrics.charts.supervisorData[s.SUPERV].history += s.VLVENDA;
                 }
@@ -4985,12 +4999,12 @@
                 const wIdx = weeks.findIndex(w => d >= w.start && d <= w.end);
                 
                 // Map to Current Month's structure (0..4)
-                if (wIdx !== -1 && wIdx < metrics.charts.weeklyHistory.length) {
+                if (wIdx !== -1 && wIdx < metrics.charts.weeklyHistory.length && isValidType) {
                     metrics.charts.weeklyHistory[wIdx] += s.VLVENDA;
                 }
 
                 // Handle Overlap for Current Chart (Single Pass)
-                if (hasOverlap && d >= firstWeekStart && d < firstOfMonth) {
+                if (hasOverlap && d >= firstWeekStart && d < firstOfMonth && isValidType) {
                     metrics.charts.weeklyCurrent[0] += s.VLVENDA;
                     metrics.overlapSales.push(s);
                 }
