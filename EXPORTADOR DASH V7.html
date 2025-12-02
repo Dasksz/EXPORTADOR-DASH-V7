@@ -1599,7 +1599,7 @@
 
         // --- MIX VIEW LOGIC ---
         const MIX_SALTY_CATEGORIES = ['CHEETOS', 'DORITOS', 'FANDANGOS', 'RUFFLES', 'TORCIDA'];
-        const MIX_FOODS_CATEGORIES = ['TODDYNHO', 'TODDY', 'QUAKER', 'KEROCOCO'];
+        const MIX_FOODS_CATEGORIES = ['TODDYNHO', 'TODDY ', 'QUAKER', 'KEROCOCO'];
 
         function getMixFilteredData(options = {}) {
             const { excludeFilter = null } = options;
@@ -4667,7 +4667,7 @@
 
         function normalize(str) {
             return str
-                ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toUpperCase()
+                ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase()
                 : '';
         }
 
@@ -4861,7 +4861,7 @@
 
             const pepsicoCodfors = new Set(['707', '708']);
             const saltyCategories = ['CHEETOS', 'DORITOS', 'FANDANGOS', 'RUFFLES', 'TORCIDA'];
-            const foodsCategories = ['TODDYNHO', 'TODDY', 'QUAKER', 'KEROCOCO'];
+            const foodsCategories = ['TODDYNHO', 'TODDY ', 'QUAKER', 'KEROCOCO'];
 
             // Helper to normalize strings
             const norm = (s) => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase() : '';
