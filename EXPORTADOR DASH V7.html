@@ -2914,6 +2914,43 @@
             return clients;
         }
 
+        function recalculateGoalsSvTotals(input) {
+            const { supId, colId, field } = input.dataset;
+            
+            // 1. Sum for this Supervisor
+            const supInputs = document.querySelectorAll(`.goals-sv-input[data-sup-id="${supId}"][data-col-id="${colId}"][data-field="${field}"]`);
+            let supSum = 0;
+            supInputs.forEach(inp => {
+                let val = parseFloat(inp.value.replace(/\./g, '').replace(',', '.'));
+                if (isNaN(val)) val = 0;
+                supSum += val;
+            });
+            
+            const supTotalEl = document.getElementById(`total-sup-${supId}-${colId}-${field}`);
+            if (supTotalEl) {
+                // Formatting depends on field
+                if (field === 'fat') supTotalEl.textContent = supSum.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                else if (field === 'vol') supTotalEl.textContent = supSum.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3});
+                else supTotalEl.textContent = supSum;
+            }
+
+            // 2. Sum for Grand Total (Geral PRIME)
+            const allInputs = document.querySelectorAll(`.goals-sv-input[data-col-id="${colId}"][data-field="${field}"]`);
+            let grandSum = 0;
+            allInputs.forEach(inp => {
+                let val = parseFloat(inp.value.replace(/\./g, '').replace(',', '.'));
+                if (isNaN(val)) val = 0;
+                grandSum += val;
+            });
+            
+            const grandTotalEl = document.getElementById(`total-grand-${colId}-${field}`);
+            if (grandTotalEl) {
+                if (field === 'fat') grandTotalEl.textContent = grandSum.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                else if (field === 'vol') grandTotalEl.textContent = grandSum.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3});
+                else grandTotalEl.textContent = grandSum;
+            }
+        }
+
         function updateGoalsSvView() {
             const filteredClients = getGoalsSvFilteredData();
             
@@ -3096,6 +3133,7 @@
                 if (!supervisorGroups.has(supName)) {
                     supervisorGroups.set(supName, {
                         name: supName,
+                        id: supName.replace(/[^a-zA-Z0-9]/g, '_'),
                         code: optimizedData.supervisorCodeByName.get(supName) || '',
                         sellers: [],
                         totals: {}
@@ -3127,7 +3165,10 @@
             // Grand Totals
             const grandTotals = {};
             svColumns.forEach(col => grandTotals[col.id] = { metaFat: 0, metaVol: 0, metaPos: 0, avgVol: 0, avgMix: 0, metaMix: 0 });
-            sortedSupervisors.forEach(sup => {
+            sortedSupervisors.forEach((sup, index) => {
+                // Generate Safe ID using Index for strict uniqueness
+                sup.id = `sup-${index}`;
+
                 svColumns.forEach(col => {
                     grandTotals[col.id].metaFat += sup.totals[col.id].metaFat;
                     grandTotals[col.id].metaVol += sup.totals[col.id].metaVol;
@@ -3234,21 +3275,21 @@
                             if (col.type === 'standard') {
                                 bodyHTML += `
                                     <td class="px-1 py-1 text-right text-slate-300 border-r border-slate-800/50">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}" class="bg-transparent text-right w-full outline-none text-yellow-300 text-xs font-mono"></td>
+                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}" class="goals-sv-input bg-transparent text-right w-full outline-none text-yellow-300 text-xs font-mono" data-sup-id="${sup.id}" data-col-id="${col.id}" data-field="fat" oninput="recalculateGoalsSvTotals(this)"></td>
                                     <td class="px-1 py-1 text-center text-slate-300 border-r border-slate-800/50">${d.metaPos}</td>
-                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaPos}" class="bg-transparent text-center w-full outline-none text-yellow-300 text-xs font-mono"></td>
+                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaPos}" class="goals-sv-input bg-transparent text-center w-full outline-none text-yellow-300 text-xs font-mono" data-sup-id="${sup.id}" data-col-id="${col.id}" data-field="pos" oninput="recalculateGoalsSvTotals(this)"></td>
                                 `;
                             } else if (col.type === 'tonnage') {
                                 bodyHTML += `
                                     <td class="px-1 py-1 text-right text-slate-300 border-r border-slate-800/50">${d.avgVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
                                     <td class="px-1 py-1 text-right text-slate-300 border-r border-slate-800/50 font-bold">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
-                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}" class="bg-transparent text-right w-full outline-none text-yellow-300 text-xs font-mono"></td>
+                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}" class="goals-sv-input bg-transparent text-right w-full outline-none text-yellow-300 text-xs font-mono" data-sup-id="${sup.id}" data-col-id="${col.id}" data-field="vol" oninput="recalculateGoalsSvTotals(this)"></td>
                                 `;
                             } else if (col.type === 'mix') {
                                 bodyHTML += `
                                     <td class="px-1 py-1 text-right text-slate-300 border-r border-slate-800/50">${d.avgMix.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1})}</td>
                                     <td class="px-1 py-1 text-right text-slate-300 border-r border-slate-800/50 font-bold">${d.metaMix}</td>
-                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaMix}" class="bg-transparent text-right w-full outline-none text-yellow-300 text-xs font-mono"></td>
+                                    <td class="px-1 py-1 bg-[#1e293b] border-r border-slate-800/50"><input type="text" value="${d.metaMix}" class="goals-sv-input bg-transparent text-right w-full outline-none text-yellow-300 text-xs font-mono" data-sup-id="${sup.id}" data-col-id="${col.id}" data-field="mix" oninput="recalculateGoalsSvTotals(this)"></td>
                                 `;
                             }
                         });
@@ -3267,21 +3308,21 @@
                         if (col.type === 'standard') {
                             bodyHTML += `
                                 <td class="px-1 py-1 text-right ${color} border-r border-slate-700">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                                <td class="px-1 py-1 text-right text-yellow-500/70 border-r border-slate-700">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                <td class="px-1 py-1 text-right text-yellow-500/70 border-r border-slate-700" id="total-sup-${sup.id}-${col.id}-fat">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                 <td class="px-1 py-1 text-center ${color} border-r border-slate-700">${d.metaPos}</td>
-                                <td class="px-1 py-1 text-center text-yellow-500/70 border-r border-slate-700">${d.metaPos}</td>
+                                <td class="px-1 py-1 text-center text-yellow-500/70 border-r border-slate-700" id="total-sup-${sup.id}-${col.id}-pos">${d.metaPos}</td>
                             `;
                         } else if (col.type === 'tonnage') {
                             bodyHTML += `
                                 <td class="px-1 py-1 text-right text-slate-300 border-r border-slate-700">${d.avgVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
                                 <td class="px-1 py-1 text-right ${color} border-r border-slate-700">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
-                                <td class="px-1 py-1 text-right text-yellow-500/70 border-r border-slate-700">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
+                                <td class="px-1 py-1 text-right text-yellow-500/70 border-r border-slate-700" id="total-sup-${sup.id}-${col.id}-vol">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
                             `;
                         } else if (col.type === 'mix') {
                             bodyHTML += `
                                 <td class="px-1 py-1 text-right text-slate-300 border-r border-slate-700">${d.avgMix.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1})}</td>
                                 <td class="px-1 py-1 text-right ${color} border-r border-slate-700">${d.metaMix}</td>
-                                <td class="px-1 py-1 text-right text-yellow-500/70 border-r border-slate-700">${d.metaMix}</td>
+                                <td class="px-1 py-1 text-right text-yellow-500/70 border-r border-slate-700" id="total-sup-${sup.id}-${col.id}-mix">${d.metaMix}</td>
                             `;
                         }
                     });
@@ -3297,21 +3338,21 @@
                     if (col.type === 'standard') {
                         bodyHTML += `
                             <td class="px-1 py-2 text-right text-teal-400 border-r border-slate-700">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                            <td class="px-1 py-2 text-right text-teal-600/70 border-r border-slate-700">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="px-1 py-2 text-right text-teal-600/70 border-r border-slate-700" id="total-grand-${col.id}-fat">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td class="px-1 py-2 text-center text-purple-400 border-r border-slate-700">${d.metaPos}</td>
-                            <td class="px-1 py-2 text-center text-purple-600/70 border-r border-slate-700">${d.metaPos}</td>
+                            <td class="px-1 py-2 text-center text-purple-600/70 border-r border-slate-700" id="total-grand-${col.id}-pos">${d.metaPos}</td>
                         `;
                     } else if (col.type === 'tonnage') {
                         bodyHTML += `
                             <td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700">${d.avgVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
                             <td class="px-1 py-2 text-right text-orange-400 border-r border-slate-700">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
-                            <td class="px-1 py-2 text-right text-orange-600/70 border-r border-slate-700">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
+                            <td class="px-1 py-2 text-right text-orange-600/70 border-r border-slate-700" id="total-grand-${col.id}-vol">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</td>
                         `;
                     } else if (col.type === 'mix') {
                         bodyHTML += `
                             <td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700">${d.avgMix.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1})}</td>
                             <td class="px-1 py-2 text-right text-cyan-400 border-r border-slate-700">${d.metaMix}</td>
-                            <td class="px-1 py-2 text-right text-cyan-600/70 border-r border-slate-700">${d.metaMix}</td>
+                            <td class="px-1 py-2 text-right text-cyan-600/70 border-r border-slate-700" id="total-grand-${col.id}-mix">${d.metaMix}</td>
                         `;
                     }
                 });
