@@ -456,6 +456,7 @@
                     CODUSUR: codUsur, CODCLI: codCliStr, CLIENTE_NOME: clientInfo.nomeCliente || 'N/A',
                     CIDADE: clientInfo.cidade || 'N/A', BAIRRO: clientInfo.bairro || 'N/A',
                     QTVENDA: qtVenda,
+                    CODSUPERVISOR: codSupervisor, // Added to ensure supervisor code is available for indexing
                     
                     // --- INÍCIO DA MODIFICAÇÃO: APLICAÇÃO DA REGRA ---
                     // Se não for faturamento (1 ou 9), VLVENDA é 0
@@ -3912,7 +3913,8 @@
 
                 // Grand Total Row (Geral PRIME)
                 bodyHTML += `<tr class="bg-[#0f172a] font-bold text-white border-t-2 border-slate-500 sticky bottom-0 z-20">`;
-                bodyHTML += `<td colspan="2" class="px-4 py-3 text-right uppercase tracking-wider">Geral PRIME</td>`;
+                bodyHTML += `<td class="px-2 py-3 text-center uppercase tracking-wider">GV</td>`;
+                bodyHTML += `<td class="px-2 py-3 text-left uppercase tracking-wider">Geral PRIME</td>`;
                 
                 svColumns.forEach(col => {
                     const d = grandTotals[col.id];
