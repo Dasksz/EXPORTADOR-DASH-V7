@@ -9073,6 +9073,8 @@
                     if (checked) selectedInnovationsSupervisors.push(value);
                     else selectedInnovationsSupervisors = selectedInnovationsSupervisors.filter(s => s !== value);
                     
+                    selectedInnovationsSupervisors = updateSupervisorFilter(innovationsMonthSupervisorFilterDropdown, document.getElementById('innovations-month-supervisor-filter-text'), selectedInnovationsSupervisors, allSalesData, true);
+
                     selectedInnovationsMonthSellers = [];
                     updateSellerFilter(selectedInnovationsSupervisors, innovationsMonthVendedorFilterDropdown, innovationsMonthVendedorFilterText, selectedInnovationsMonthSellers, allSalesData);
                     debouncedUpdateInnovationsMonth();
