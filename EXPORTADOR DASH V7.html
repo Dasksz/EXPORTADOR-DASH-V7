@@ -3097,9 +3097,11 @@
                 const hIds = optimizedData.indices.history.byClient.get(c['Código']);
                 if(hIds) {
                     const clientSums = {};
+                    let clientTotalFat = 0;
                     hIds.forEach(id => {
                         const s = optimizedData.historyById.get(id);
                         if (s.TIPOVENDA === '1' || s.TIPOVENDA === '9') {
+                            clientTotalFat += s.VLVENDA;
                             const codFor = String(s.CODFOR);
                             const desc = norm(s.DESCRICAO || '');
                             const keysToAdd = [];
@@ -3605,6 +3607,21 @@
             });
         }
 
+
+        function calculateAdjustedTotalPos(naturalTotal, naturalElma, targetElma, naturalFoods, targetFoods) {
+            const adjElma = targetElma - naturalElma;
+            const adjFoods = targetFoods - naturalFoods;
+            let finalAdj = 0;
+
+            // Logic: Same Direction -> Average. Mixed/Zero -> Sum.
+            if ((adjElma > 0 && adjFoods > 0) || (adjElma < 0 && adjFoods < 0)) {
+                finalAdj = (adjElma + adjFoods) / 2;
+            } else {
+                finalAdj = adjElma + adjFoods;
+            }
+
+            return Math.round(naturalTotal + finalAdj);
+        }
 
         function calculateGoalMixVariation(input) {
             const val = parseFloat(input.value.replace(/\./g, '').replace(',', '.')) || 0;
@@ -4362,16 +4379,24 @@ function getFilterDescription() {
                     const totalElma = sellerObj.data['total_elma'];
                     const totalFoods = sellerObj.data['total_foods'];
 
-                    // Logic for GERAL Meta Pos:
-                    // If we have manual overrides, simply summing them might double count if same client is targetted in both.
-                    // However, we don't have a "Geral Override".
-                    // Let's use the Natural Active Client count as the base.
+                    // Logic for GERAL Meta Pos (New Independent Logic):
+                    // Base = Natural Unique Clients (activeClientsCount).
+                    // Adjustments = Difference from Natural for ELMA and FOODS targets.
+                    // Final = Base + Logic(AdjElma, AdjFoods) using calculateAdjustedTotalPos.
+
+                    const natElma = sellerObj.elmaPos || 0;
+                    const tarElma = totalElma.metaPos; // Already contains override if present
+
+                    const natFoods = sellerObj.foodsPos || 0;
+                    const tarFoods = totalFoods.metaPos; // Already contains override if present
+
+                    const calculatedMetaPos = calculateAdjustedTotalPos(activeClientsCount, natElma, tarElma, natFoods, tarFoods);
 
                     sellerObj.data['geral'] = {
                         avgFat: (totalElma.avgFat || 0) + (totalFoods.avgFat || 0),
                         metaFat: totalElma.metaFat + totalFoods.metaFat,
                         metaVol: totalElma.metaVol + totalFoods.metaVol,
-                        metaPos: activeClientsCount
+                        metaPos: calculatedMetaPos
                     };
 
                     // Pedev is 90% of Total Elma Pos (which might be overridden)
