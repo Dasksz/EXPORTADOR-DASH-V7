@@ -3186,15 +3186,67 @@
             // Calculate Base Total
             const basePosCount = uniquePosClientsSet.size;
 
+
+            // Calculate Base Total
+            const basePosCount = uniquePosClientsSet.size;
+
+            // Calculate Total Adjustment with new logic (Average if both positive, else Sum)
             let totalAdjustment = 0;
+
+            // 1. Identify all sellers relevant to the current view (based on Supervisor Filter)
+            const relevantSellers = new Set();
+
+            // If Supervisor filter is active, only include sellers under those supervisors
+            // Otherwise, include all sellers
+            const filterBySupervisor = selectedGoalsSummarySupervisors.length > 0;
+            const validSupervisors = new Set(selectedGoalsSummarySupervisors);
+
+            const getSupervisorForSeller = (sellerName) => {
+                // Use existing lookup maps
+                const rcaCode = optimizedData.rcaCodeByName.get(sellerName);
+                if (!rcaCode) return null;
+                // Reverse lookup from supervisorToRcaMap (slow) or use cached sellerDetails if available?
+                // rcasBySupervisor is Map<Supervisor, [RcaCodes]>
+                for (const [sup, rcas] of optimizedData.rcasBySupervisor) {
+                    if (rcas.includes(rcaCode)) return sup;
+                }
+                return null;
+            };
+
+            // Collect all sellers that have adjustments
+            const sellersWith adjustments = new Set();
             if (goalsPosAdjustments['ELMA_ALL']) {
-                goalsPosAdjustments['ELMA_ALL'].forEach(val => totalAdjustment += val);
+                for (const seller of goalsPosAdjustments['ELMA_ALL'].keys()) relevantSellers.add(seller);
             }
             if (goalsPosAdjustments['FOODS_ALL']) {
-                goalsPosAdjustments['FOODS_ALL'].forEach(val => totalAdjustment += val);
+                for (const seller of goalsPosAdjustments['FOODS_ALL'].keys()) relevantSellers.add(seller);
             }
 
+            relevantSellers.forEach(seller => {
+                // Check Filter
+                if (filterBySupervisor) {
+                    const sup = getSupervisorForSeller(seller);
+                    if (!sup || !validSupervisors.has(sup)) return;
+                }
+
+                const deltaElma = goalsPosAdjustments['ELMA_ALL'] ? (goalsPosAdjustments['ELMA_ALL'].get(seller) || 0) : 0;
+                const deltaFoods = goalsPosAdjustments['FOODS_ALL'] ? (goalsPosAdjustments['FOODS_ALL'].get(seller) || 0) : 0;
+
+                let sellerAdjustment = 0;
+
+                if (deltaElma > 0 && deltaFoods > 0) {
+                    // Scenario 1: Both Positive -> Average (Rounded)
+                    sellerAdjustment = Math.round((deltaElma + deltaFoods) / 2);
+                } else {
+                    // Scenario 2: Mixed or Both Negative -> Sum
+                    sellerAdjustment = deltaElma + deltaFoods;
+                }
+
+                totalAdjustment += sellerAdjustment;
+            });
+
             const adjustedTotalPos = basePosCount + totalAdjustment;
+
 
             if(totalPosEl) totalPosEl.textContent = adjustedTotalPos.toLocaleString('pt-BR');
             
