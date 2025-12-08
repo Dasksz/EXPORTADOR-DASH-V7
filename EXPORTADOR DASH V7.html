@@ -3772,17 +3772,24 @@
                     if (isAggregatedTab && isSingleSeller) {
                         newMixInput.readOnly = false;
                         newMixInput.classList.remove('opacity-50', 'cursor-not-allowed');
-                        if(btnDistributeMix) btnDistributeMix.style.display = '';
                         
-                        newMixInput.addEventListener('change', (e) => {
-                            const val = parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0;
-                            // Delta = NewInput - Natural
-                            const newAdjustment = val - naturalTotalPos;
+                        if(btnDistributeMix) {
+                            const newBtnDistributeMix = btnDistributeMix.cloneNode(true);
+                            btnDistributeMix.parentNode.replaceChild(newBtnDistributeMix, btnDistributeMix);
+                            newBtnDistributeMix.style.display = '';
                             
-                            if (adjustmentMap) {
-                                adjustmentMap.set(selectedGoalsGvSellers[0], newAdjustment);
-                            }
-                        });
+                            newBtnDistributeMix.addEventListener('click', () => {
+                                const valStr = newMixInput.value;
+                                const filterDesc = getFilterDescription();
+                                showConfirmationModal(`Confirmar ajuste de Meta Positivação para ${valStr} (Cliente: ${filterDesc})?`, () => {
+                                    const val = parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0;
+                                    const newAdjustment = val - naturalTotalPos;
+                                    if (adjustmentMap) {
+                                        adjustmentMap.set(selectedGoalsGvSellers[0], newAdjustment);
+                                    }
+                                });
+                            });
+                        }
                     } else {
                         newMixInput.readOnly = true;
                         newMixInput.classList.add('opacity-50', 'cursor-not-allowed');
@@ -9739,17 +9746,7 @@
                 });
             }
 
-            const btnDistributeMix = document.getElementById('btn-distribute-mix');
-            if (btnDistributeMix) {
-                btnDistributeMix.addEventListener('click', () => {
-                    const filterDesc = getFilterDescription();
-                    const val = document.getElementById('goal-global-mix').value;
-                    showConfirmationModal(`Confirmar ajuste de Meta Positivação para ${val} (Cliente: ${filterDesc})?`, () => {
-                        const input = document.getElementById('goal-global-mix');
-                        if(input) input.dispatchEvent(new Event('change'));
-                    });
-                });
-            }
+            
 
             // Add Input Listeners for Real-time State Updates
             const fatInput = document.getElementById('goal-global-fat');
