@@ -1723,6 +1723,7 @@
         };
         let globalGoalsMetrics = {};
         let globalGoalsTotalsCache = {};
+        let globalSellerGoals = {};
         let globalClientGoals = new Map(); // Map<CodCli, Map<Key, {fat: 0, vol: 0}>>
         let quarterMonths = [];
 
@@ -1748,6 +1749,34 @@
                 const [y, m] = k.split('-');
                 return { key: k, label: monthNames[parseInt(m)] };
             });
+        }
+
+
+        function calculateAdjustedTotalPos(sellerName, naturalElma, naturalFoods, naturalUnique) {
+            const goals = globalSellerGoals[sellerName] || {};
+
+            // If no overrides, return natural unique
+            if (goals['ELMA_ALL'] === undefined && goals['FOODS_ALL'] === undefined) return naturalUnique;
+
+            const targetElma = goals['ELMA_ALL'] !== undefined ? goals['ELMA_ALL'] : naturalElma;
+            const targetFoods = goals['FOODS_ALL'] !== undefined ? goals['FOODS_ALL'] : naturalFoods;
+
+            const deltaElma = targetElma - naturalElma;
+            const deltaFoods = targetFoods - naturalFoods;
+
+            let adjustment = 0;
+
+            const sameSign = (deltaElma > 0 && deltaFoods > 0) || (deltaElma < 0 && deltaFoods < 0);
+
+            if (sameSign) {
+                // Average (Round half up)
+                adjustment = Math.round((deltaElma + deltaFoods) / 2);
+            } else {
+                // Sum (Mixed or one is zero)
+                adjustment = deltaElma + deltaFoods;
+            }
+
+            return naturalUnique + adjustment;
         }
 
         function calculateGoalsMetrics() {
@@ -3182,23 +3211,66 @@
             if(totalFatEl) totalFatEl.textContent = totalFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             if(totalVolEl) totalVolEl.textContent = totalVol.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
             
-            const totalPosCount = uniquePosClientsSet.size;
-            if(totalPosEl) totalPosEl.textContent = totalPosCount.toLocaleString('pt-BR');
             
-            // Calculate base for Mix Goals (Exclude Americanas / Seller 1001)
-            let mixBaseCount = 0;
-            uniquePosClientsSet.forEach(clientCode => {
-                const client = clientMapForKPIs.get(String(clientCode));
-                if (client) {
-                     const rca1 = String(client.rca1 || '').trim();
-                     if (rca1 !== '1001') {
-                         mixBaseCount++;
-                     }
+            // --- NEW LOGIC: Calculate Adjusted Total Pos based on Seller Deltas ---
+            let totalAdjustedPos = 0;
+
+            // 1. Group active filtered clients by Seller to get Natural Counts
+            const summarySellerMap = new Map();
+
+            filteredSummaryClients.forEach(c => {
+                const rcaCode = c.rcas[0];
+                const sellerName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+
+                if (!summarySellerMap.has(sellerName)) {
+                    summarySellerMap.set(sellerName, { elma: 0, foods: 0, unique: 0, clients: [] });
                 }
+                summarySellerMap.get(sellerName).clients.push(c['Código']);
             });
 
-            if(mixSaltyEl) mixSaltyEl.textContent = Math.round(mixBaseCount * 0.60).toLocaleString('pt-BR');
-            if(mixFoodsEl) mixFoodsEl.textContent = Math.round(mixBaseCount * 0.30).toLocaleString('pt-BR');
+            summarySellerMap.forEach((data, sellerName) => {
+                let uniquePosCount = 0;
+                let elmaPosCount = 0;
+                let foodsPosCount = 0;
+
+                data.clients.forEach(codCli => {
+                    const hIds = optimizedData.indices.history.byClient.get(codCli);
+                    if (hIds) {
+                        let cElmaFat = 0;
+                        let cFoodsFat = 0;
+
+                        for (const id of hIds) {
+                            const sale = optimizedData.historyById.get(id);
+                            if (sale.TIPOVENDA !== '1' && sale.TIPOVENDA !== '9') continue;
+
+                            const codFor = String(sale.CODFOR);
+                            if (['707', '708', '752'].includes(codFor)) cElmaFat += sale.VLVENDA;
+
+                            if (codFor === '1119') {
+                                const desc = normalize(sale.DESCRICAO || '');
+                                if (MIX_FOODS_CATEGORIES.some(cat => desc.includes(cat))) {
+                                    cFoodsFat += sale.VLVENDA;
+                                }
+                            }
+                        }
+
+                        if (cElmaFat > 1) elmaPosCount++;
+                        if (cFoodsFat > 1) foodsPosCount++;
+                        if ((cElmaFat + cFoodsFat) > 1) uniquePosCount++;
+                    }
+                });
+
+                totalAdjustedPos += calculateAdjustedTotalPos(sellerName, elmaPosCount, foodsPosCount, uniquePosCount);
+            });
+
+            if(totalPosEl) totalPosEl.textContent = totalAdjustedPos.toLocaleString('pt-BR');
+
+
+
+            // Use Total Adjusted Pos as base
+            if(mixSaltyEl) mixSaltyEl.textContent = Math.round(totalAdjustedPos * 0.60).toLocaleString('pt-BR');
+            if(mixFoodsEl) mixFoodsEl.textContent = Math.round(totalAdjustedPos * 0.30).toLocaleString('pt-BR');
+
         }
 
         function calculateDistributedGoals(filteredClients, currentGoalsSupplier, currentGoalsBrand, goalFat, goalVol) {
@@ -3726,9 +3798,56 @@
                 const goalMixInput = document.getElementById('goal-global-mix');
                 const totalMetaPos = clientMetrics.reduce((sum, item) => sum + item.metaPos, 0);
                 if (goalMixInput) {
-                    goalMixInput.value = totalMetaPos.toLocaleString('pt-BR');
-                    if (isAggregatedTab) goalMixInput.classList.add('opacity-50', 'cursor-not-allowed');
-                    else goalMixInput.classList.remove('opacity-50', 'cursor-not-allowed');
+                    // Logic for Meta Pos Editability
+                    const isSingleSeller = selectedGoalsGvSellers.length === 1;
+                    const sellerName = isSingleSeller ? selectedGoalsGvSellers[0] : null;
+
+                    let displayValue = totalMetaPos;
+
+                    // If single seller and aggregated tab (ELMA or FOODS), allow override
+                    if (isSingleSeller && isAggregatedTab) {
+                        const sellerGoals = globalSellerGoals[sellerName] || {};
+                        const currentKey = currentGoalsSupplier; // 'ELMA_ALL' or 'FOODS_ALL'
+
+                        if (sellerGoals[currentKey] !== undefined) {
+                            displayValue = sellerGoals[currentKey];
+                        }
+
+                        goalMixInput.readOnly = false;
+                        goalMixInput.classList.remove('opacity-50', 'cursor-not-allowed');
+
+                        goalMixInput.oninput = function() {
+                            let val = parseInt(this.value.replace(/\./g, '')) || 0;
+                            if (!globalSellerGoals[sellerName]) globalSellerGoals[sellerName] = {};
+                            globalSellerGoals[sellerName][currentKey] = val;
+
+                            // Debounce UI update to reflect changes in 'Resumo' or other calculations if needed
+                            if (window.goalsMixUpdateTimeout) clearTimeout(window.goalsMixUpdateTimeout);
+                            window.goalsMixUpdateTimeout = setTimeout(() => {
+                                // We don't want to full re-render 'updateGoalsView' because it would reset the input focus/state.
+                                // But if 'Resumo' tab or other components need updates, they are separate.
+                                // However, usually these inputs are on the same page.
+                                // The user requested "calculated total ... in Summary page".
+                                // The input is in GV. Summary is a different tab/view 'goals-summary-content'.
+                                // So immediate re-render of current view isn't strictly necessary for the calculation to appear elsewhere.
+                                // BUT if the "Total Meta Pos" (which is displayed in the summary) is also visible somewhere else...
+                                // Actually, inside GV view, there is no "Total Adjusted" displayed, only the input itself.
+
+                                // WAIT: 'Meta Positivação' input in GV *IS* the input.
+                                // Does it show a calculated total? No, it shows the target for that category.
+
+                                // So we just need to save state.
+                                // But to be safe and responsive, let's trigger a light update if needed.
+                                // For now, just saving state is sufficient as the calculation happens when viewing Resumo/SV.
+                            }, 500);
+                        };
+                    } else {
+                        goalMixInput.readOnly = true;
+                        goalMixInput.oninput = null;
+                        goalMixInput.classList.add('opacity-50', 'cursor-not-allowed');
+                    }
+
+                    goalMixInput.value = displayValue.toLocaleString('pt-BR');
                 }
 
                 goalsTableState.filteredData = clientMetrics;
@@ -4155,7 +4274,7 @@
                         avgFat: (totalElma.avgFat || 0) + (totalFoods.avgFat || 0),
                         metaFat: totalElma.metaFat + totalFoods.metaFat,
                         metaVol: totalElma.metaVol + totalFoods.metaVol,
-                        metaPos: activeClientsCount
+                        metaPos: calculateAdjustedTotalPos(sellerObj.name, sellerObj.elmaPos, sellerObj.foodsPos, activeClientsCount)
                     };
                     sellerObj.data['pedev'] = { metaPos: Math.round(totalElma.metaPos * 0.9) };
                 });
