@@ -1724,7 +1724,9 @@
         let globalGoalsMetrics = {};
         let globalGoalsTotalsCache = {};
         let globalClientGoals = new Map();
-        let goalsPosAdjustments = { 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map() }; // Map<CodCli, Map<Key, {fat: 0, vol: 0}>>
+        let goalsPosAdjustments = { 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map(), 'PEPSICO_ALL': new Map() };
+        let goalsMixSaltyAdjustments = new Map();
+        let goalsMixFoodsAdjustments = new Map(); // Map<CodCli, Map<Key, {fat: 0, vol: 0}>>
         let quarterMonths = [];
 
         function identifyQuarterMonths() {
@@ -1770,7 +1772,8 @@
                 '1119_TODDY': createMetric(),
                 '1119_QUAKER_KEROCOCO': createMetric(),
                 'ELMA_ALL': createMetric(),
-                'FOODS_ALL': createMetric()
+                'FOODS_ALL': createMetric(),
+                'PEPSICO_ALL': createMetric()
             };
 
             const currentDate = lastSaleDate;
@@ -1894,6 +1897,7 @@
 
             aggregateToAll('ELMA_ALL', ['707', '708', '752']);
             aggregateToAll('FOODS_ALL', ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO']);
+            aggregateToAll('PEPSICO_ALL', ['ELMA_ALL', 'FOODS_ALL']);
 
             // Finalize calculations for ALL keys
             for (const key in globalGoalsMetrics) {
@@ -3235,7 +3239,8 @@
                 const codFor = String(sale.CODFOR);
                 if (supplier === 'ELMA_ALL') {
                     if (!['707', '708', '752'].includes(codFor)) return false;
-                } else if (supplier === 'FOODS_ALL') {
+                } else if (supplier === 'PEPSICO_ALL') { if (!['707', '708', '752', '1119'].includes(codFor)) return false; }
+                else if (supplier === 'FOODS_ALL') {
                     // Include all brands of 1119 that are in sub-tabs
                     if (codFor !== '1119') return false;
                     // No brand filtering here, assuming 1119 contains mostly Foods
@@ -3611,6 +3616,7 @@
             const shouldIncludeSale = (sale, supplier, brand) => {
                 const codFor = String(sale.CODFOR);
                 if (supplier === 'ELMA_ALL') { if (!['707', '708', '752'].includes(codFor)) return false; }
+                else if (supplier === 'PEPSICO_ALL') { if (!['707', '708', '752', '1119'].includes(codFor)) return false; }
                 else if (supplier === 'FOODS_ALL') { if (codFor !== '1119') return false; }
                 else {
                     if (codFor !== supplier) return false;
@@ -3715,6 +3721,29 @@
                 const volInput = document.getElementById('goal-global-vol');
                 const btnDistributeFat = document.getElementById('btn-distribute-fat');
                 const btnDistributeVol = document.getElementById('btn-distribute-vol');
+
+                                }
+                            });
+                        }
+                    });
+
+
+                        updateGoalsView();
+                    });
+                });
+            }
+
+                                }
+                            });
+                        }
+                    });
+
+
+                        updateGoalsView();
+                    });
+                });
+            }
+
                 const isAggregatedTab = currentGoalsSupplier === 'ELMA_ALL' || currentGoalsSupplier === 'FOODS_ALL';
 
                 if (fatInput) {
@@ -3737,6 +3766,71 @@
                 const refPrevClients = document.getElementById('ref-prev-clients'); if(refPrevClients) refPrevClients.textContent = totalPrevClients.toLocaleString('pt-BR');
 
                 clientMetrics.sort((a, b) => b.metaFat - a.metaFat);
+
+
+                const mixSaltyInput = document.getElementById('goal-global-mix-salty');
+                const mixFoodsInput = document.getElementById('goal-global-mix-foods');
+                const btnDistributeMixSalty = document.getElementById('btn-distribute-mix-salty');
+                const btnDistributeMixFoods = document.getElementById('btn-distribute-mix-foods');
+
+                if (currentGoalsSupplier === 'PEPSICO_ALL') {
+                    let activeClientsCount = 0;
+
+                    filteredClients.forEach(c => {
+                        const hIds = optimizedData.indices.history.byClient.get(c['Código']);
+                        let totalFat = 0;
+                        if(hIds) {
+                            hIds.forEach(id => {
+                                const s = optimizedData.historyById.get(id);
+                                if (s.TIPOVENDA === '1' || s.TIPOVENDA === '9') totalFat += s.VLVENDA;
+                            });
+                        }
+                        if(totalFat > 1) activeClientsCount++;
+                    });
+
+                    const baseSalty = Math.round(activeClientsCount * 0.60);
+                    const baseFoods = Math.round(activeClientsCount * 0.30);
+
+                    const isSingleSeller = selectedGoalsGvSellers.length === 1;
+                    let sellerName = isSingleSeller ? selectedGoalsGvSellers[0] : null;
+
+                    let adjSalty = 0;
+                    let adjFoods = 0;
+
+                    if (isSingleSeller) {
+                        adjSalty = goalsMixSaltyAdjustments.get(sellerName) || 0;
+                        adjFoods = goalsMixFoodsAdjustments.get(sellerName) || 0;
+                    }
+
+                    const finalSalty = baseSalty + adjSalty;
+                    const finalFoods = baseFoods + adjFoods;
+
+                    if (mixSaltyInput) {
+                        mixSaltyInput.value = finalSalty;
+                        if (isSingleSeller) {
+                            mixSaltyInput.readOnly = false;
+                            mixSaltyInput.classList.remove('opacity-50', 'cursor-not-allowed');
+                            if(btnDistributeMixSalty) btnDistributeMixSalty.style.display = '';
+                        } else {
+                            mixSaltyInput.readOnly = true;
+                            mixSaltyInput.classList.add('opacity-50', 'cursor-not-allowed');
+                            if(btnDistributeMixSalty) btnDistributeMixSalty.style.display = 'none';
+                        }
+                    }
+
+                    if (mixFoodsInput) {
+                        mixFoodsInput.value = finalFoods;
+                        if (isSingleSeller) {
+                            mixFoodsInput.readOnly = false;
+                            mixFoodsInput.classList.remove('opacity-50', 'cursor-not-allowed');
+                            if(btnDistributeMixFoods) btnDistributeMixFoods.style.display = '';
+                        } else {
+                            mixFoodsInput.readOnly = true;
+                            mixFoodsInput.classList.add('opacity-50', 'cursor-not-allowed');
+                            if(btnDistributeMixFoods) btnDistributeMixFoods.style.display = 'none';
+                        }
+                    }
+                }
 
                 const goalMixInput = document.getElementById('goal-global-mix');
                 const btnDistributeMix = document.getElementById('btn-distribute-mix');
@@ -4210,6 +4304,11 @@
                     let mixSaltyMeta = Math.round(activeClientsCount * 0.60);
                     let mixFoodsMeta = Math.round(activeClientsCount * 0.30);
                     if (sellerObj.code === '1001') { mixSaltyMeta = 0; mixFoodsMeta = 0; }
+
+                    // Apply Adjustments
+                    mixSaltyMeta += (goalsMixSaltyAdjustments.get(sellerObj.name) || 0);
+                    mixFoodsMeta += (goalsMixFoodsAdjustments.get(sellerObj.name) || 0);
+
 
                     sellerObj.data['mix_salty'] = { avgMix: sumSalty / divisor, metaMix: mixSaltyMeta };
                     sellerObj.data['mix_foods'] = { avgMix: sumFoods / divisor, metaMix: mixFoodsMeta };
@@ -9530,10 +9629,12 @@
             }
 
             // Category Toggle Logic
-            const btnElmaChips = document.getElementById('goals-category-elmachips-btn');
+            const btnPepsico = document.getElementById('goals-category-pepsico-btn');
+        const btnElmaChips = document.getElementById('goals-category-elmachips-btn');
             const btnFoods = document.getElementById('goals-category-foods-btn');
             const btnSummary = document.getElementById('goals-category-summary-btn');
-            const subTabsElmaChips = document.getElementById('goals-sub-tabs-elmachips');
+            const subTabsPepsico = document.getElementById('goals-sub-tabs-pepsico');
+        const subTabsElmaChips = document.getElementById('goals-sub-tabs-elmachips');
             const subTabsFoods = document.getElementById('goals-sub-tabs-foods');
             
             // Containers
@@ -9549,7 +9650,7 @@
 
             const toggleGoalsView = (view) => {
                 // Reset Buttons
-                [btnElmaChips, btnFoods, btnSummary].forEach(btn => {
+                [btnPepsico, btnElmaChips, btnFoods, btnSummary].forEach(btn => {
                     if (btn) {
                         btn.classList.remove('bg-[#0d9488]', 'text-white', 'shadow-lg', 'border-teal-500/50');
                         btn.classList.add('bg-[#334155]', 'text-slate-400', 'border-slate-700');
@@ -9557,9 +9658,16 @@
                 });
 
                 // Hide All Sub-tabs
+                if(subTabsPepsico) subTabsPepsico.classList.add('hidden');
                 if(subTabsElmaChips) subTabsElmaChips.classList.add('hidden');
                 if(subTabsFoods) subTabsFoods.classList.add('hidden');
                 
+                // Mix Cards
+                const cardMixSalty = document.getElementById('goal-mix-salty-card');
+                const cardMixFoods = document.getElementById('goal-mix-foods-card');
+                if(cardMixSalty) cardMixSalty.classList.add('hidden');
+                if(cardMixFoods) cardMixFoods.classList.add('hidden');
+
                 // Toggle Content
                 if (view === 'summary') {
                     if(btnSummary) {
@@ -9569,32 +9677,34 @@
                     if(goalsSummaryContainer) goalsSummaryContainer.classList.remove('hidden');
                     if(goalsMainContainer) goalsMainContainer.classList.add('hidden');
                     if(goalsTableContainer) goalsTableContainer.classList.add('hidden');
-                    
-                    // HIDE Main Filters Container completely
                     if(goalsFiltersContainer) goalsFiltersContainer.classList.add('hidden');
-                    
-                    // Ensure Summary Filters are initialized/visible (they are inside summary container)
                     updateGoalsSummaryView();
                 } else {
-                    // Show Main Content
                     if(goalsSummaryContainer) goalsSummaryContainer.classList.add('hidden');
                     if(goalsMainContainer) goalsMainContainer.classList.remove('hidden');
                     if(goalsTableContainer) goalsTableContainer.classList.remove('hidden');
-                    
-                    // SHOW Main Filters Container and all wrappers
                     if(goalsFiltersContainer) goalsFiltersContainer.classList.remove('hidden');
                     if(wrapperSupervisor) wrapperSupervisor.classList.remove('hidden');
                     if(wrapperSeller) wrapperSeller.classList.remove('hidden');
                     if(wrapperCodCli) wrapperCodCli.classList.remove('hidden');
 
-                    if (view === 'elmachips') {
+                    if (view === 'pepsico') {
+                        if(btnPepsico) {
+                            btnPepsico.classList.remove('bg-[#334155]', 'text-slate-400', 'border-slate-700');
+                            btnPepsico.classList.add('bg-[#0d9488]', 'text-white', 'shadow-lg', 'border-teal-500/50');
+                        }
+                        if(subTabsPepsico) subTabsPepsico.classList.remove('hidden');
+                        if(cardMixSalty) cardMixSalty.classList.remove('hidden');
+                        if(cardMixFoods) cardMixFoods.classList.remove('hidden');
+
+                        const firstTab = subTabsPepsico.querySelector('.goals-sub-tab');
+                        if (firstTab) firstTab.click();
+                    } else if (view === 'elmachips') {
                         if(btnElmaChips) {
                             btnElmaChips.classList.remove('bg-[#334155]', 'text-slate-400', 'border-slate-700');
                             btnElmaChips.classList.add('bg-[#0d9488]', 'text-white', 'shadow-lg', 'border-teal-500/50');
                         }
                         if(subTabsElmaChips) subTabsElmaChips.classList.remove('hidden');
-                        
-                        // Select First Tab of Elma Chips
                         const firstTab = subTabsElmaChips.querySelector('.goals-sub-tab');
                         if (firstTab) firstTab.click();
                     } else if (view === 'foods') {
@@ -9603,21 +9713,13 @@
                             btnFoods.classList.add('bg-[#0d9488]', 'text-white', 'shadow-lg', 'border-teal-500/50');
                         }
                         if(subTabsFoods) subTabsFoods.classList.remove('hidden');
-                        
-                        // Select First Tab of Foods
                         const firstTab = subTabsFoods.querySelector('.goals-sub-tab');
                         if (firstTab) firstTab.click();
                     }
-                    
-                    // --- FIX: Update Inputs for Default Selection when Switching Category ---
-                    // When clicking "Elma Chips" or "Foods", we default to the first tab.
-                    // We need to ensure the inputs are loaded for that default tab.
-                    // Actually, `firstTab.click()` triggers the event listener above which handles this!
-                    // So we are covered by the `click()` call.
                 }
             };
-
-            if (btnElmaChips && btnFoods && btnSummary) {
+if (btnPepsico && btnElmaChips && btnFoods && btnSummary) {
+                btnPepsico.addEventListener('click', () => toggleGoalsView('pepsico'));
                 btnElmaChips.addEventListener('click', () => toggleGoalsView('elmachips'));
                 btnFoods.addEventListener('click', () => toggleGoalsView('foods'));
                 btnSummary.addEventListener('click', () => toggleGoalsView('summary'));
@@ -9736,6 +9838,73 @@
             }
 
             const btnDistributeVol = document.getElementById('btn-distribute-vol');
+
+                                    const btnDistributeMixSalty = document.getElementById('btn-distribute-mix-salty');
+            if (btnDistributeMixSalty) {
+                btnDistributeMixSalty.addEventListener('click', () => {
+                    if (selectedGoalsGvSellers.length !== 1) return;
+                    const sellerName = selectedGoalsGvSellers[0];
+                    const valStr = document.getElementById('goal-global-mix-salty').value;
+                    const val = parseInt(valStr) || 0;
+
+                    let activeClientsCount = 0;
+                    const filteredClients = getGoalsFilteredData();
+
+                    filteredClients.forEach(c => {
+                        const hIds = optimizedData.indices.history.byClient.get(c['Código']);
+                        let totalFat = 0;
+                        if(hIds) {
+                            hIds.forEach(id => {
+                                const s = optimizedData.historyById.get(id);
+                                if (s.TIPOVENDA === '1' || s.TIPOVENDA === '9') totalFat += s.VLVENDA;
+                            });
+                        }
+                        if(totalFat > 1) activeClientsCount++;
+                    });
+
+                    const base = Math.round(activeClientsCount * 0.60);
+                    const adjustment = val - base;
+
+                    showConfirmationModal(`Definir Meta Mix Salty para ${val} (Base 60%: ${base}, Ajuste: ${adjustment > 0 ? '+' : ''}${adjustment}) para ${sellerName}?`, () => {
+                        goalsMixSaltyAdjustments.set(sellerName, adjustment);
+                        updateGoalsView();
+                    });
+                });
+            }
+
+                        const btnDistributeMixFoods = document.getElementById('btn-distribute-mix-foods');
+            if (btnDistributeMixFoods) {
+                btnDistributeMixFoods.addEventListener('click', () => {
+                    if (selectedGoalsGvSellers.length !== 1) return;
+                    const sellerName = selectedGoalsGvSellers[0];
+                    const valStr = document.getElementById('goal-global-mix-foods').value;
+                    const val = parseInt(valStr) || 0;
+
+                    let activeClientsCount = 0;
+                    const filteredClients = getGoalsFilteredData();
+
+                    filteredClients.forEach(c => {
+                        const hIds = optimizedData.indices.history.byClient.get(c['Código']);
+                        let totalFat = 0;
+                        if(hIds) {
+                            hIds.forEach(id => {
+                                const s = optimizedData.historyById.get(id);
+                                if (s.TIPOVENDA === '1' || s.TIPOVENDA === '9') totalFat += s.VLVENDA;
+                            });
+                        }
+                        if(totalFat > 1) activeClientsCount++;
+                    });
+
+                    const base = Math.round(activeClientsCount * 0.30);
+                    const adjustment = val - base;
+
+                    showConfirmationModal(`Definir Meta Mix Foods para ${val} (Base 30%: ${base}, Ajuste: ${adjustment > 0 ? '+' : ''}${adjustment}) para ${sellerName}?`, () => {
+                        goalsMixFoodsAdjustments.set(sellerName, adjustment);
+                        updateGoalsView();
+                    });
+                });
+            }
+
             if (btnDistributeVol) {
                 btnDistributeVol.addEventListener('click', () => {
                     const filterDesc = getFilterDescription();
@@ -10970,6 +11139,7 @@
                                 <!-- Category Selection Toggles -->
                                 <div class="flex flex-col gap-4 mb-6">
                                     <div class="flex gap-4">
+                                        <button id="goals-category-pepsico-btn" class="px-8 py-3 bg-[#334155] text-slate-400 font-bold rounded hover:bg-slate-700 transition-colors uppercase tracking-wider text-sm border border-slate-700">PEPSICO</button>
                                         <button id="goals-category-elmachips-btn" class="px-8 py-3 bg-[#0d9488] text-white font-bold rounded hover:bg-teal-700 transition-colors uppercase tracking-wider text-sm shadow-lg border border-teal-500/50">ELMA CHIPS</button>
                                         <button id="goals-category-foods-btn" class="px-8 py-3 bg-[#334155] text-slate-400 font-bold rounded hover:bg-slate-700 transition-colors uppercase tracking-wider text-sm border border-slate-700">FOODS</button>
                                          <button id="goals-category-summary-btn" class="px-8 py-3 bg-[#334155] text-slate-400 font-bold rounded hover:bg-slate-700 transition-colors uppercase tracking-wider text-sm border border-slate-700">RESUMO</button>
@@ -10988,6 +11158,11 @@
                                         </div>
 
                                         <!-- Foods Sub-tabs -->
+
+                                        <!-- Pepsico Sub-tabs -->
+                                        <div class="hidden flex border-b border-slate-700 overflow-x-auto" id="goals-sub-tabs-pepsico">
+                                            <button data-supplier="PEPSICO_ALL" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">GERAL</button>
+                                        </div>
                                         <div class="hidden flex border-b border-slate-700 overflow-x-auto" id="goals-sub-tabs-foods">
                                             <button data-supplier="FOODS_ALL" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">FOODS</button>
                                             <button data-supplier="1119" data-brand="TODDYNHO" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">TODDYNHO</button>
@@ -11090,6 +11265,38 @@
                                             <span>Mês Ant: <span id="ref-prev-clients" class="text-white font-bold">0</span></span>
                                         </div>
                                     </div>
+
+                                    <!-- Mix Salty Card -->
+                                    <div id="goal-mix-salty-card" class="hidden bg-[#0f766e] border border-teal-900/50 rounded-lg p-3 relative overflow-hidden group">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-teal-500"></div>
+                                        <label class="text-[10px] font-bold text-teal-300 uppercase tracking-wider mb-1 block">META MIX SALTY</label>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="goal-global-mix-salty" class="w-full bg-[#0f172a] border border-teal-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-teal-500" value="0" readonly>
+                                            <button id="btn-distribute-mix-salty" class="bg-teal-600 hover:bg-teal-500 text-white px-3 rounded flex items-center justify-center transition-colors" style="display: none;">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                            </button>
+                                        </div>
+                                        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                                            <span>Média Trim: <span id="ref-avg-mix-salty" class="text-white font-bold">0</span></span>
+                                            <span>Mês Ant: <span id="ref-prev-mix-salty" class="text-white font-bold">0</span></span>
+                                        </div>
+                                    </div>
+                                    <!-- Mix Foods Card -->
+                                    <div id="goal-mix-foods-card" class="hidden bg-[#854d0e] border border-yellow-900/50 rounded-lg p-3 relative overflow-hidden group">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-yellow-500"></div>
+                                        <label class="text-[10px] font-bold text-yellow-300 uppercase tracking-wider mb-1 block">META MIX FOODS</label>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="goal-global-mix-foods" class="w-full bg-[#0f172a] border border-yellow-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-yellow-500" value="0" readonly>
+                                            <button id="btn-distribute-mix-foods" class="bg-yellow-600 hover:bg-yellow-500 text-white px-3 rounded flex items-center justify-center transition-colors" style="display: none;">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                            </button>
+                                        </div>
+                                        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                                            <span>Média Trim: <span id="ref-avg-mix-foods" class="text-white font-bold">0</span></span>
+                                            <span>Mês Ant: <span id="ref-prev-mix-foods" class="text-white font-bold">0</span></span>
+                                        </div>
+                                    </div>
+
                                     <!-- Summary -->
                                     <div class="flex flex-col justify-center items-end text-right pr-4">
                                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TOTAL RATEADO</p>
