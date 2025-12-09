@@ -631,7 +631,7 @@
                     const codCli = String(client['Código'] || '').trim();
                     if (!codCli) return;
 
-                    const rca1 = String(client['RCA 1'] || '');
+                    const rca1 = String(client['RCA 1'] || '').trim();
                     const rcas = new Set();
                     if (rca1) rcas.add(rca1);
 
