@@ -1804,6 +1804,8 @@
                 if (clientHistoryIds) {
                     clientHistoryIds.forEach(id => {
                         const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Summary Metrics
+                        if (codCli === '9569' && String(sale.CODUSUR) === '53') return;
                         
                         let key = null;
                         const codFor = String(sale.CODFOR);
@@ -2952,6 +2954,8 @@
                 if (clientHistoryIds) {
                     clientHistoryIds.forEach(id => {
                         const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Summary Metrics
+                        if (codCli === '9569' && String(sale.CODUSUR) === '53') return;
                         
                         let key = null;
                         const codFor = String(sale.CODFOR);
@@ -3302,6 +3306,9 @@
                         let sumVol = 0;
                         clientHistoryIds.forEach(id => {
                             const sale = optimizedData.historyById.get(id);
+                            // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Global Portfolio Totals
+                            if (codCli === '9569' && String(sale.CODUSUR) === '53') return;
+
                             if (shouldIncludeSale(sale, currentGoalsSupplier, currentGoalsBrand)) {
                                 if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
                                     sumFat += sale.VLVENDA;
@@ -3336,6 +3343,9 @@
                 if (clientHistoryIds) {
                     clientHistoryIds.forEach(id => {
                         const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Portfolio Average
+                        if (codCli === '9569' && String(sale.CODUSUR) === '53') return;
+
                         if (shouldIncludeSale(sale, currentGoalsSupplier, currentGoalsBrand)) {
                             if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
                                 sumFat += sale.VLVENDA;
@@ -3716,6 +3726,9 @@
                 if (clientHistoryIds) {
                     clientHistoryIds.forEach(id => {
                         const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Portfolio Average
+                        if (codCli === '9569' && String(sale.CODUSUR) === '53') return;
+
                         if (shouldIncludeSale(sale, currentGoalsSupplier, currentGoalsBrand)) {
                             if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
                                 cSumFat += sale.VLVENDA;
@@ -4198,6 +4211,9 @@
                 if (clientHistoryIds) {
                     clientHistoryIds.forEach(id => {
                         const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Portfolio Analysis
+                        if (codCli === '9569' && String(sale.CODUSUR) === '53') return;
+
                         const isRev = (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9');
                         if (!isRev) return;
 
