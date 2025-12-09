@@ -1838,7 +1838,8 @@
                             }
 
                             // 2. Accumulate for Client Count Check (Balance per period)
-                            if (d) {
+                            // Strict Filter: Only Types 1 & 9 count towards positive status
+                            if (d && (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9')) {
                                 if (!clientTotals[key]) clientTotals[key] = { prevFat: 0, monthlyFat: new Map() };
                                 
                                 if (isPrevMonth) clientTotals[key].prevFat += sale.VLVENDA;
@@ -2977,7 +2978,8 @@
                             }
 
                             // 2. Accumulate for Client Count Check (Balance per period)
-                            if (d) {
+                            // Strict Filter: Only Types 1 & 9 count towards positive status
+                            if (d && (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9')) {
                                 if (!clientTotals[key]) clientTotals[key] = { prevFat: 0, monthlyFat: new Map() };
                                 
                                 if (isPrevMonth) clientTotals[key].prevFat += sale.VLVENDA;
