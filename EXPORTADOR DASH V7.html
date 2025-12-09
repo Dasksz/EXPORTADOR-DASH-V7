@@ -1268,13 +1268,18 @@
                     if (sale.DTSAIDA && !(sale.DTSAIDA instanceof Date)) sale.DTSAIDA = new Date(sale.DTSAIDA);
 
                     if (sale.CODCLI !== americanasCodCli) {
-                        const currentSellerCode = clientToCurrentSellerMap.get(sale.CODCLI);
-                        if (currentSellerCode) {
-                            const sellerDetails = sellerDetailsMap.get(currentSellerCode);
-                            if (sellerDetails) {
-                                sale.CODUSUR = currentSellerCode;
-                                sale.NOME = sellerDetails.name;
-                                sale.SUPERV = sellerDetails.supervisor;
+                        // EXCEPTION: Do not remap if Client 9569, RCA 53, and Type 1/9 (Preserve Balcão)
+                        const isException = (sale.CODCLI === '9569' && String(sale.CODUSUR) === '53' && (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9'));
+
+                        if (!isException) {
+                            const currentSellerCode = clientToCurrentSellerMap.get(sale.CODCLI);
+                            if (currentSellerCode) {
+                                const sellerDetails = sellerDetailsMap.get(currentSellerCode);
+                                if (sellerDetails) {
+                                    sale.CODUSUR = currentSellerCode;
+                                    sale.NOME = sellerDetails.name;
+                                    sale.SUPERV = sellerDetails.supervisor;
+                                }
                             }
                         }
                     }
