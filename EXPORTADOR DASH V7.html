@@ -348,7 +348,11 @@
 
         const processSalesData = (rawData, clientMap, productMasterMap, newRcaSupervisorMap) => {
             return rawData.map(rawRow => {
-                const codCliStr = String(rawRow['CODCLI']).trim();
+                let codCliStr = String(rawRow['CODCLI']).trim();
+                const rawCodUsurCheck = String(rawRow['CODUSUR'] || '').trim();
+                if (codCliStr === '9569' && (rawCodUsurCheck === '53' || rawCodUsurCheck === '053')) {
+                    codCliStr = '9569-53';
+                }
                 const clientInfo = clientMap.get(codCliStr) || {};
                 
                 // --- INÍCIO DA MODIFICAÇÃO: LÓGICA DE ATRIBUIÇÃO DE VENDEDOR ---
@@ -657,6 +661,14 @@
                     };
                     if (clientRcaOverrides.has(codCli)) clientData.rcas.unshift(clientRcaOverrides.get(codCli));
                     clientMap.set(codCli, clientData);
+                    if (codCli === '9569') {
+                        const shadowClient = { ...clientData };
+                        shadowClient['Código'] = '9569-53';
+                        shadowClient.rca1 = '53';
+                        shadowClient.rcas = ['53'];
+                        shadowClient.nomeCliente = (shadowClient.nomeCliente || '') + ' (BALCAO)';
+                        clientMap.set('9569-53', shadowClient);
+                    }
                 });
 
                 self.postMessage({ type: 'progress', status: 'Cruzando dados de vendas...', percentage: 70 });
