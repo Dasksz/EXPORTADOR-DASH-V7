@@ -1724,7 +1724,9 @@
         let globalGoalsMetrics = {};
         let globalGoalsTotalsCache = {};
         let globalClientGoals = new Map();
-        let goalsPosAdjustments = { 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map() }; // Map<CodCli, Map<Key, {fat: 0, vol: 0}>>
+        let goalsPosAdjustments = { 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map(), 'PEPSICO_ALL': new Map() }; // Map<CodCli, Map<Key, {fat: 0, vol: 0}>>
+        let goalsMixSaltyAdjustments = { 'PEPSICO_ALL': new Map() }; // Map<SellerName, adjustment>
+        let goalsMixFoodsAdjustments = { 'PEPSICO_ALL': new Map() }; // Map<SellerName, adjustment>
         let quarterMonths = [];
 
         function identifyQuarterMonths() {
@@ -1770,7 +1772,8 @@
                 '1119_TODDY': createMetric(),
                 '1119_QUAKER_KEROCOCO': createMetric(),
                 'ELMA_ALL': createMetric(),
-                'FOODS_ALL': createMetric()
+                'FOODS_ALL': createMetric(),
+                'PEPSICO_ALL': createMetric()
             };
 
             const currentDate = lastSaleDate;
@@ -1894,6 +1897,7 @@
 
             aggregateToAll('ELMA_ALL', ['707', '708', '752']);
             aggregateToAll('FOODS_ALL', ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO']);
+            aggregateToAll('PEPSICO_ALL', ['707', '708', '752', '1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO']);
 
             // Finalize calculations for ALL keys
             for (const key in globalGoalsMetrics) {
@@ -3194,7 +3198,8 @@
                 goalsPosAdjustments['FOODS_ALL'].forEach(val => totalAdjustment += val);
             }
             
-            const adjustedTotalPos = basePosCount + totalAdjustment;
+            // NOTE: User requested removal of manual adjustments from Summary Total Pos
+            const adjustedTotalPos = basePosCount;
             
             if(totalPosEl) totalPosEl.textContent = adjustedTotalPos.toLocaleString('pt-BR');
             
@@ -3233,7 +3238,10 @@
 
             const shouldIncludeSale = (sale, supplier, brand) => {
                 const codFor = String(sale.CODFOR);
-                if (supplier === 'ELMA_ALL') {
+                if (supplier === 'PEPSICO_ALL') {
+                    // Includes everything
+                    if (!['707', '708', '752', '1119'].includes(codFor)) return false;
+                } else if (supplier === 'ELMA_ALL') {
                     if (!['707', '708', '752'].includes(codFor)) return false;
                 } else if (supplier === 'FOODS_ALL') {
                     // Include all brands of 1119 that are in sub-tabs
@@ -3558,6 +3566,62 @@
             return 'filtro atual';
         }
 
+        function saveMixAdjustment(type, value, sellerName) {
+            // Find natural base for this seller
+            // We can iterate the 'filteredClients' from 'updateGoalsView' context if we had it, or re-filter.
+            // Since we are in a helper, we re-filter for safety and accuracy.
+
+            // Re-use logic for Active Clients counting
+            const sellerClients = allClientsData.filter(c => {
+                const rca1 = String(c.rca1 || '').trim();
+                // Check if this client belongs to the seller
+                const sellerCode = optimizedData.rcaCodeByName.get(sellerName);
+                if (!sellerCode) return false;
+
+                // Is client active check (Same as others)
+                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+                if (!isAmericanas && rca1 === '53') return false;
+
+                // Does client belong to seller?
+                // Check current assignment (rca1 or rcas list?)
+                // Dashboard logic uses 'rca1' primarily for current view assignment in lists,
+                // but filters check 'rcas' array.
+                // Let's use 'rcas' includes code.
+                return c.rcas.includes(sellerCode);
+            });
+
+            let naturalCount = 0;
+            // Count "Meta Pos" (Revenue > 1 in PEPSICO_ALL) for these clients
+            sellerClients.forEach(c => {
+                const codCli = c['Código'];
+                const hIds = optimizedData.indices.history.byClient.get(codCli);
+                let sumFat = 0;
+                if (hIds) {
+                    hIds.forEach(id => {
+                        const s = optimizedData.historyById.get(id);
+                        if (['707', '708', '752', '1119'].includes(String(s.CODFOR))) {
+                            if (s.TIPOVENDA === '1' || s.TIPOVENDA === '9') sumFat += s.VLVENDA;
+                        }
+                    });
+                }
+                if (sumFat > 1) naturalCount++;
+            });
+
+            // Apply 60% / 30% rule
+            const base = type === 'salty' ? Math.round(naturalCount * 0.60) : Math.round(naturalCount * 0.30);
+            const adjustment = value - base;
+
+            if (type === 'salty') {
+                if (!goalsMixSaltyAdjustments['PEPSICO_ALL']) goalsMixSaltyAdjustments['PEPSICO_ALL'] = new Map();
+                goalsMixSaltyAdjustments['PEPSICO_ALL'].set(sellerName, adjustment);
+            } else {
+                if (!goalsMixFoodsAdjustments['PEPSICO_ALL']) goalsMixFoodsAdjustments['PEPSICO_ALL'] = new Map();
+                goalsMixFoodsAdjustments['PEPSICO_ALL'].set(sellerName, adjustment);
+            }
+
+            updateGoalsView();
+        }
+
         function updateGoalsView() {
             goalsRenderId++;
             const currentRenderId = goalsRenderId;
@@ -3584,21 +3648,7 @@
             // Cache Key for Global Totals
             const cacheKey = currentGoalsSupplier + (currentGoalsBrand ? `_${currentGoalsBrand}` : '');
             
-            // NOTE: Global Totals must be calculated before individual shares.
-            // If we are async, we can do this first.
-            // We reuse the existing cache logic inside 'calculateDistributedGoals' which we will break apart or call in chunks.
-            // But 'calculateDistributedGoals' calculates everything in one go.
-            // Let's rely on it for now but wrap it in async chunked loop if possible?
-            // Actually 'calculateDistributedGoals' is the heavy function.
-            // We should use 'runAsyncChunked' to process 'filteredClients'.
-
-            // Pre-calculate Global Totals if missing (Sync because it loops all active clients once, can be heavy but needed for share)
-            // Ideally this should also be cached or async. For now, assuming it's fast enough or cached.
             if (!globalGoalsTotalsCache[cacheKey]) {
-                 // Trigger calculation by calling with empty list? No.
-                 // We need to run the global calc logic.
-                 // Let's just run calculateDistributedGoals for the first chunk to prime the cache?
-                 // Or just let it run synchronously once.
                  calculateDistributedGoals([], currentGoalsSupplier, currentGoalsBrand, 0, 0);
             }
 
@@ -3610,7 +3660,8 @@
             // Helper for inclusion check
             const shouldIncludeSale = (sale, supplier, brand) => {
                 const codFor = String(sale.CODFOR);
-                if (supplier === 'ELMA_ALL') { if (!['707', '708', '752'].includes(codFor)) return false; }
+                if (supplier === 'PEPSICO_ALL') { if (!['707', '708', '752', '1119'].includes(codFor)) return false; }
+                else if (supplier === 'ELMA_ALL') { if (!['707', '708', '752'].includes(codFor)) return false; }
                 else if (supplier === 'FOODS_ALL') { if (codFor !== '1119') return false; }
                 else {
                     if (codFor !== supplier) return false;
@@ -3715,7 +3766,7 @@
                 const volInput = document.getElementById('goal-global-vol');
                 const btnDistributeFat = document.getElementById('btn-distribute-fat');
                 const btnDistributeVol = document.getElementById('btn-distribute-vol');
-                const isAggregatedTab = currentGoalsSupplier === 'ELMA_ALL' || currentGoalsSupplier === 'FOODS_ALL';
+                const isAggregatedTab = currentGoalsSupplier === 'ELMA_ALL' || currentGoalsSupplier === 'FOODS_ALL' || currentGoalsSupplier === 'PEPSICO_ALL';
 
                 if (fatInput) {
                     if (document.activeElement !== fatInput) fatInput.value = sumFat.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3741,6 +3792,7 @@
                 const goalMixInput = document.getElementById('goal-global-mix');
                 const btnDistributeMix = document.getElementById('btn-distribute-mix');
                 const naturalTotalPos = clientMetrics.reduce((sum, item) => sum + item.metaPos, 0);
+                const isSingleSeller = selectedGoalsGvSellers.length === 1;
                 
                 if (goalMixInput) {
                     const newMixInput = goalMixInput.cloneNode(true);
@@ -3751,7 +3803,7 @@
                     const adjustmentMap = goalsPosAdjustments[currentGoalsSupplier];
                     
                     if (adjustmentMap) {
-                        if (selectedGoalsGvSellers.length === 1) {
+                        if (isSingleSeller) {
                             // Specific Seller Context
                             contextAdjustment = adjustmentMap.get(selectedGoalsGvSellers[0]) || 0;
                         } else {
@@ -3766,8 +3818,6 @@
 
                     const displayPos = naturalTotalPos + contextAdjustment;
                     newMixInput.value = displayPos.toLocaleString('pt-BR');
-                    
-                    const isSingleSeller = selectedGoalsGvSellers.length === 1;
                     
                     if (isAggregatedTab && isSingleSeller) {
                         newMixInput.readOnly = false;
@@ -3786,6 +3836,7 @@
                                     const newAdjustment = val - naturalTotalPos;
                                     if (adjustmentMap) {
                                         adjustmentMap.set(selectedGoalsGvSellers[0], newAdjustment);
+                                        updateGoalsView();
                                     }
                                 });
                             });
@@ -3795,6 +3846,69 @@
                         newMixInput.classList.add('opacity-50', 'cursor-not-allowed');
                         if(btnDistributeMix) btnDistributeMix.style.display = 'none';
                     }
+                }
+
+                // --- MIX SALTY & FOODS CARDS LOGIC (PEPSICO ONLY) ---
+                const cardMixSalty = document.getElementById('card-mix-salty');
+                const cardMixFoods = document.getElementById('card-mix-foods');
+
+                if (currentGoalsSupplier === 'PEPSICO_ALL') {
+                    if(cardMixSalty) cardMixSalty.classList.remove('hidden');
+                    if(cardMixFoods) cardMixFoods.classList.remove('hidden');
+
+                    // Logic to populate values and handle edit
+                    let naturalMixBase = 0;
+                    clientMetrics.forEach(c => {
+                        // Check if not seller 1001 (Americanas)
+                        const sellerCode = optimizedData.rcaCodeByName.get(c.seller) || '';
+                        if (sellerCode !== '1001') {
+                            if (c.metaPos > 0) naturalMixBase++; // Count positivations in PEPSICO_ALL (Total Pos)
+                        }
+                    });
+
+                    const naturalSaltyTarget = Math.round(naturalMixBase * 0.60);
+                    const naturalFoodsTarget = Math.round(naturalMixBase * 0.30);
+
+                    const handleMixCard = (type, naturalTarget, adjustmentsMap, inputId, btnId) => {
+                        let adj = 0;
+                        if (isSingleSeller) {
+                            adj = adjustmentsMap.get(selectedGoalsGvSellers[0]) || 0;
+                        } else {
+                            const visibleSellers = new Set(clientMetrics.map(c => c.seller));
+                            adjustmentsMap.forEach((val, seller) => {
+                                if (visibleSellers.has(seller)) adj += val;
+                            });
+                        }
+
+                        const displayVal = naturalTarget + adj;
+                        const input = document.getElementById(inputId);
+                        const btn = document.getElementById(btnId);
+
+                        if(input) {
+                            input.value = displayVal.toLocaleString('pt-BR');
+
+                            if (isSingleSeller) {
+                                input.readOnly = false;
+                                input.classList.remove('opacity-50', 'cursor-not-allowed');
+                                if(btn) btn.style.display = '';
+                            } else {
+                                input.readOnly = true;
+                                input.classList.add('opacity-50', 'cursor-not-allowed');
+                                if(btn) btn.style.display = 'none';
+                            }
+                        }
+                    };
+
+                    if (goalsMixSaltyAdjustments['PEPSICO_ALL']) {
+                        handleMixCard('Salty', naturalSaltyTarget, goalsMixSaltyAdjustments['PEPSICO_ALL'], 'goal-global-mix-salty', 'btn-distribute-mix-salty');
+                    }
+                    if (goalsMixFoodsAdjustments['PEPSICO_ALL']) {
+                        handleMixCard('Foods', naturalFoodsTarget, goalsMixFoodsAdjustments['PEPSICO_ALL'], 'goal-global-mix-foods', 'btn-distribute-mix-foods');
+                    }
+
+                } else {
+                    if(cardMixSalty) cardMixSalty.classList.add('hidden');
+                    if(cardMixFoods) cardMixFoods.classList.add('hidden');
                 }
 
                 goalsTableState.filteredData = clientMetrics;
@@ -9530,9 +9644,11 @@
             }
 
             // Category Toggle Logic
+            const btnPepsico = document.getElementById('goals-category-pepsico-btn');
             const btnElmaChips = document.getElementById('goals-category-elmachips-btn');
             const btnFoods = document.getElementById('goals-category-foods-btn');
             const btnSummary = document.getElementById('goals-category-summary-btn');
+            const subTabsPepsico = document.getElementById('goals-sub-tabs-pepsico');
             const subTabsElmaChips = document.getElementById('goals-sub-tabs-elmachips');
             const subTabsFoods = document.getElementById('goals-sub-tabs-foods');
             
@@ -9549,7 +9665,7 @@
 
             const toggleGoalsView = (view) => {
                 // Reset Buttons
-                [btnElmaChips, btnFoods, btnSummary].forEach(btn => {
+                [btnPepsico, btnElmaChips, btnFoods, btnSummary].forEach(btn => {
                     if (btn) {
                         btn.classList.remove('bg-[#0d9488]', 'text-white', 'shadow-lg', 'border-teal-500/50');
                         btn.classList.add('bg-[#334155]', 'text-slate-400', 'border-slate-700');
@@ -9557,6 +9673,7 @@
                 });
 
                 // Hide All Sub-tabs
+                if(subTabsPepsico) subTabsPepsico.classList.add('hidden');
                 if(subTabsElmaChips) subTabsElmaChips.classList.add('hidden');
                 if(subTabsFoods) subTabsFoods.classList.add('hidden');
                 
@@ -9587,7 +9704,15 @@
                     if(wrapperSeller) wrapperSeller.classList.remove('hidden');
                     if(wrapperCodCli) wrapperCodCli.classList.remove('hidden');
 
-                    if (view === 'elmachips') {
+                    if (view === 'pepsico') {
+                        if(btnPepsico) {
+                            btnPepsico.classList.remove('bg-[#334155]', 'text-slate-400', 'border-slate-700');
+                            btnPepsico.classList.add('bg-[#0d9488]', 'text-white', 'shadow-lg', 'border-teal-500/50');
+                        }
+                        if(subTabsPepsico) subTabsPepsico.classList.remove('hidden');
+                        const firstTab = subTabsPepsico.querySelector('.goals-sub-tab');
+                        if (firstTab) firstTab.click();
+                    } else if (view === 'elmachips') {
                         if(btnElmaChips) {
                             btnElmaChips.classList.remove('bg-[#334155]', 'text-slate-400', 'border-slate-700');
                             btnElmaChips.classList.add('bg-[#0d9488]', 'text-white', 'shadow-lg', 'border-teal-500/50');
@@ -9608,16 +9733,11 @@
                         const firstTab = subTabsFoods.querySelector('.goals-sub-tab');
                         if (firstTab) firstTab.click();
                     }
-                    
-                    // --- FIX: Update Inputs for Default Selection when Switching Category ---
-                    // When clicking "Elma Chips" or "Foods", we default to the first tab.
-                    // We need to ensure the inputs are loaded for that default tab.
-                    // Actually, `firstTab.click()` triggers the event listener above which handles this!
-                    // So we are covered by the `click()` call.
                 }
             };
 
-            if (btnElmaChips && btnFoods && btnSummary) {
+            if (btnPepsico && btnElmaChips && btnFoods && btnSummary) {
+                btnPepsico.addEventListener('click', () => toggleGoalsView('pepsico'));
                 btnElmaChips.addEventListener('click', () => toggleGoalsView('elmachips'));
                 btnFoods.addEventListener('click', () => toggleGoalsView('foods'));
                 btnSummary.addEventListener('click', () => toggleGoalsView('summary'));
@@ -9746,7 +9866,46 @@
                 });
             }
 
-            
+            const btnDistributeMixSalty = document.getElementById('btn-distribute-mix-salty');
+            if (btnDistributeMixSalty) {
+                btnDistributeMixSalty.addEventListener('click', () => {
+                    const sellerName = selectedGoalsGvSellers[0];
+                    if (!sellerName) return;
+                    const valStr = document.getElementById('goal-global-mix-salty').value;
+                    showConfirmationModal(`Confirmar ajuste de Meta Mix Salty para ${valStr} (Vendedor: ${getFirstName(sellerName)})?`, () => {
+                        const val = parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0;
+
+                        // Calculate Natural Base again to store Delta
+                        // We need the natural base for THIS seller to calculate delta (Input - Natural)
+                        // It's cleaner if updateGoalsView handles this logic directly in the listener,
+                        // OR we store the natural base somewhere.
+                        // For simplicity, let's just trigger a custom event or call a handler that has access to context.
+                        // Actually, since we need "Natural" value which varies by filter context, it's safer to handle this
+                        // inside updateGoalsView where metrics are available, OR make this listener smart enough.
+
+                        // Let's use the adjustment map directly.
+                        // But we don't know the natural value here easily without recalculating.
+                        // Solution: The input value IS the target. We want to store the adjustment.
+                        // Adjustment = Target - Natural.
+
+                        // Let's implement a specific helper function "saveMixAdjustment" that recalculates natural base for single seller.
+                        saveMixAdjustment('salty', val, sellerName);
+                    });
+                });
+            }
+
+            const btnDistributeMixFoods = document.getElementById('btn-distribute-mix-foods');
+            if (btnDistributeMixFoods) {
+                btnDistributeMixFoods.addEventListener('click', () => {
+                    const sellerName = selectedGoalsGvSellers[0];
+                    if (!sellerName) return;
+                    const valStr = document.getElementById('goal-global-mix-foods').value;
+                    showConfirmationModal(`Confirmar ajuste de Meta Mix Foods para ${valStr} (Vendedor: ${getFirstName(sellerName)})?`, () => {
+                        const val = parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0;
+                        saveMixAdjustment('foods', val, sellerName);
+                    });
+                });
+            }
 
             // Add Input Listeners for Real-time State Updates
             const fatInput = document.getElementById('goal-global-fat');
@@ -10970,6 +11129,7 @@
                                 <!-- Category Selection Toggles -->
                                 <div class="flex flex-col gap-4 mb-6">
                                     <div class="flex gap-4">
+                                        <button id="goals-category-pepsico-btn" class="px-8 py-3 bg-[#334155] text-slate-400 font-bold rounded hover:bg-slate-700 transition-colors uppercase tracking-wider text-sm border border-slate-700">PEPSICO</button>
                                         <button id="goals-category-elmachips-btn" class="px-8 py-3 bg-[#0d9488] text-white font-bold rounded hover:bg-teal-700 transition-colors uppercase tracking-wider text-sm shadow-lg border border-teal-500/50">ELMA CHIPS</button>
                                         <button id="goals-category-foods-btn" class="px-8 py-3 bg-[#334155] text-slate-400 font-bold rounded hover:bg-slate-700 transition-colors uppercase tracking-wider text-sm border border-slate-700">FOODS</button>
                                          <button id="goals-category-summary-btn" class="px-8 py-3 bg-[#334155] text-slate-400 font-bold rounded hover:bg-slate-700 transition-colors uppercase tracking-wider text-sm border border-slate-700">RESUMO</button>
@@ -10977,6 +11137,11 @@
                                     
                                     <!-- Sub-tabs Container -->
                                     <div id="goals-sub-tabs-container">
+                                        <!-- PEPSICO Sub-tabs -->
+                                        <div class="hidden flex border-b border-slate-700 overflow-x-auto" id="goals-sub-tabs-pepsico">
+                                            <button data-supplier="PEPSICO_ALL" class="goals-sub-tab px-6 py-3 text-slate-400 font-medium text-sm hover:text-white transition-colors whitespace-nowrap">PEPSICO</button>
+                                        </div>
+
                                         <!-- Elma Chips Sub-tabs -->
                                         <div class="flex border-b border-slate-700 overflow-x-auto" id="goals-sub-tabs-elmachips">
                                             <button data-supplier="ELMA_ALL" class="goals-sub-tab px-6 py-3 text-teal-400 font-bold text-sm border-b-2 border-teal-400 flex items-center gap-2 whitespace-nowrap active">
@@ -11090,8 +11255,37 @@
                                             <span>Mês Ant: <span id="ref-prev-clients" class="text-white font-bold">0</span></span>
                                         </div>
                                     </div>
+                                    <!-- Mix Salty Card (Hidden by Default) -->
+                                    <div id="card-mix-salty" class="hidden bg-[#064e3b] border border-emerald-900/50 rounded-lg p-3 relative overflow-hidden group">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                                        <label class="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1 block">META MIX SALTY</label>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="goal-global-mix-salty" class="w-full bg-[#0f172a] border border-emerald-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-emerald-500" value="0" readonly>
+                                            <button id="btn-distribute-mix-salty" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 rounded flex items-center justify-center transition-colors" style="display: none;">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                            </button>
+                                        </div>
+                                        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                                            <span>60% Ativos</span>
+                                        </div>
+                                    </div>
+                                    <!-- Mix Foods Card (Hidden by Default) -->
+                                    <div id="card-mix-foods" class="hidden bg-[#713f12] border border-yellow-900/50 rounded-lg p-3 relative overflow-hidden group">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-yellow-500"></div>
+                                        <label class="text-[10px] font-bold text-yellow-300 uppercase tracking-wider mb-1 block">META MIX FOODS</label>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="goal-global-mix-foods" class="w-full bg-[#0f172a] border border-yellow-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-yellow-500" value="0" readonly>
+                                            <button id="btn-distribute-mix-foods" class="bg-yellow-600 hover:bg-yellow-500 text-white px-3 rounded flex items-center justify-center transition-colors" style="display: none;">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                            </button>
+                                        </div>
+                                        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                                            <span>30% Ativos</span>
+                                        </div>
+                                    </div>
+
                                     <!-- Summary -->
-                                    <div class="flex flex-col justify-center items-end text-right pr-4">
+                                    <div id="goals-dist-summary" class="flex flex-col justify-center items-end text-right pr-4">
                                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TOTAL RATEADO</p>
                                         <p class="text-2xl font-bold text-green-400">100% Distribuído</p>
                                     </div>
