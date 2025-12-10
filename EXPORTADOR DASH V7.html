@@ -349,13 +349,7 @@
         const processSalesData = (rawData, clientMap, productMasterMap, newRcaSupervisorMap) => {
             return rawData.map(rawRow => {
                 let codCliStr = String(rawRow['CODCLI']).trim();
-
-                // FORCE SEPARATION: Client 9569 + RCA 53 -> New ID
-                const rawCodUsurForCheck = String(rawRow['CODUSUR'] || '').trim();
-                if (parseInt(codCliStr) === 9569 && parseInt(rawCodUsurForCheck) === 53) {
-                    codCliStr = '9569-53';
-                }
-                const clientInfo = clientMap.get(codCliStr) || {};
+                                const clientInfo = clientMap.get(codCliStr) || {};
                 
                 // --- INÍCIO DA MODIFICAÇÃO: LÓGICA DE ATRIBUIÇÃO DE VENDEDOR ---
                 
@@ -542,6 +536,53 @@
                     readFile(innovationsFile, 'innovations')
                 ]);
 
+                // --- INJECTED: VIRTUAL FORKING FOR CLIENT 9569 ---
+                // Goal: Physically separate RCA 53 sales from Main RCA sales for Client 9569 at the raw data level.
+
+                // 1. Find and Fork Client 9569
+                const client9569Index = clientsDataRaw.findIndex(c => String(c['Código']).trim() === '9569');
+                if (client9569Index !== -1) {
+                    const originalClient = clientsDataRaw[client9569Index];
+
+                    // Create Shadow Client for Balcão (53)
+                    const shadowClient = { ...originalClient };
+                    shadowClient['Código'] = '9569-53';
+                    shadowClient['Cliente'] = (originalClient['Cliente'] || '') + ' (BALCAO)';
+                    shadowClient['Fantasia'] = (originalClient['Fantasia'] || '') + ' (BALCAO)';
+                    shadowClient['RCA 1'] = '53';
+                    // We don't mess with other fields to keep integrity
+
+                    clientsDataRaw.push(shadowClient);
+
+                    // 2. Clean Original Client (Remove 53 implication if any, though usually in RCA 1)
+                    // If RCA 1 is 53, forcing it to something else might be tricky if unknown,
+                    // but usually 9569 has a real RCA.
+                    // If the file says RCA 1 is 53 for the main row, we might need to fix it?
+                    // Assuming the user says "RCA cujo cliente está cadastrado", implies it's NOT 53 in the file,
+                    // or if it is, we need to find the "real" one.
+                    // However, usually the issue is sales coming from 53 for a client owned by X.
+                }
+
+                // 2. Remap Sales for RCA 53 to the new Shadow Client ID
+                const remapSalesFor9569 = (dataset) => {
+                    for (let i = 0; i < dataset.length; i++) {
+                        const row = dataset[i];
+                        const codCli = String(row['CODCLI']).trim();
+                        if (codCli === '9569') {
+                            const rca = String(row['CODUSUR'] || '').trim();
+                            // Check for 53 or 053
+                            if (rca === '53' || rca === '053') {
+                                row['CODCLI'] = '9569-53'; // Redirect this sale to the shadow client
+                            }
+                        }
+                    }
+                };
+
+                remapSalesFor9569(salesDataRaw);
+                remapSalesFor9569(historyDataRaw);
+                // ------------------------------------------------
+
+
                 self.postMessage({ type: 'progress', status: 'Criando mapa mestre de supervisores...', percentage: 20 });
                 const newRcaSupervisorMap = new Map();
                 const lastSaleDateMap = new Map();
@@ -663,17 +704,6 @@
                     };
                     if (clientRcaOverrides.has(codCli)) clientData.rcas.unshift(clientRcaOverrides.get(codCli));
                     clientMap.set(codCli, clientData);
-                    if (codCli === '9569') {
-                        // Remove 53 from the main client's RCA list so it doesn't appear under Balcao filter
-                        clientData.rcas = clientData.rcas.filter(r => String(r).trim() !== '53' && String(r).trim() !== '053');
-
-                        const shadowClient = { ...clientData };
-                        shadowClient['Código'] = '9569-53';
-                        shadowClient.rca1 = '53';
-                        shadowClient.rcas = ['53'];
-                        shadowClient.nomeCliente = (shadowClient.nomeCliente || '') + ' (BALCAO)';
-                        clientMap.set('9569-53', shadowClient);
-                    }
                 });
 
                 self.postMessage({ type: 'progress', status: 'Cruzando dados de vendas...', percentage: 70 });
@@ -1231,14 +1261,6 @@
                 if (client.rca1) clientToCurrentSellerMap.set(codCli, String(client.rca1));
                 clientRamoMap.set(codCli, client.ramo || 'N/A');
                 
-                // CLEAN SEPARATION FOR CLIENT 9569
-                if (codCli === '9569' && client.rcas) {
-                     // Main entity: Strictly remove 53
-                     client.rcas = client.rcas.filter(r => String(r).trim() !== '53' && String(r).trim() !== '053');
-                }
-                // Shadow entity (9569-53) is already created in Worker and comes in as a separate item in allClientsData
-                // So we just process 'client' normally now.
-
                 if (client.rcas) {
                     for (let j = 0; j < client.rcas.length; j++) {
                         const rca = client.rcas[j];
