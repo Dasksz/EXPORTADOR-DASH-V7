@@ -539,30 +539,6 @@
                 // --- INJECTED: VIRTUAL FORKING FOR CLIENT 9569 ---
                 // Goal: Physically separate RCA 53 sales from Main RCA sales for Client 9569 at the raw data level.
 
-                // 1. Find and Fork Client 9569
-                const client9569Index = clientsDataRaw.findIndex(c => String(c['Código']).trim() === '9569');
-                if (client9569Index !== -1) {
-                    const originalClient = clientsDataRaw[client9569Index];
-
-                    // Create Shadow Client for Balcão (53)
-                    const shadowClient = { ...originalClient };
-                    shadowClient['Código'] = '9569-53';
-                    shadowClient['Cliente'] = (originalClient['Cliente'] || '') + ' (BALCAO)';
-                    shadowClient['Fantasia'] = (originalClient['Fantasia'] || '') + ' (BALCAO)';
-                    shadowClient['RCA 1'] = '53';
-                    // We don't mess with other fields to keep integrity
-
-                    clientsDataRaw.push(shadowClient);
-
-                    // 2. Clean Original Client (Remove 53 implication if any, though usually in RCA 1)
-                    // If RCA 1 is 53, forcing it to something else might be tricky if unknown,
-                    // but usually 9569 has a real RCA.
-                    // If the file says RCA 1 is 53 for the main row, we might need to fix it?
-                    // Assuming the user says "RCA cujo cliente está cadastrado", implies it's NOT 53 in the file,
-                    // or if it is, we need to find the "real" one.
-                    // However, usually the issue is sales coming from 53 for a client owned by X.
-                }
-
                 // 2. Remap Sales for RCA 53 to the new Shadow Client ID
                 const remapSalesFor9569 = (dataset) => {
                     for (let i = 0; i < dataset.length; i++) {
@@ -572,7 +548,7 @@
                             const rca = String(row['CODUSUR'] || '').trim();
                             // Check for 53 or 053
                             if (rca === '53' || rca === '053') {
-                                row['CODCLI'] = '9569-53'; // Redirect this sale to the shadow client
+                                row['CODCLI'] = '7706'; // Redirect this sale to Client 7706 (Valid RCA 53 Client)
                             }
                         }
                     }
@@ -1298,9 +1274,8 @@
 
                     if (sale.CODCLI !== americanasCodCli) {
                         // EXCEPTION: Do not remap if Client 9569, RCA 53, and Type 1/9 (Preserve Balcão)
-                        const isException = (String(sale.CODCLI).trim() === '9569' && (String(sale.CODUSUR).trim() === '53' || String(sale.CODUSUR).trim() === '053') && (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9'));
                         
-                        if (!isException) {
+                        if (true) {
                             const currentSellerCode = clientToCurrentSellerMap.get(sale.CODCLI);
                             if (currentSellerCode) {
                                 const sellerDetails = sellerDetailsMap.get(currentSellerCode);
@@ -1824,7 +1799,7 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' && String(c['Código']).trim() !== '9569-53') return false;
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -2897,7 +2872,7 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' && String(c['Código']).trim() !== '9569-53') return false;
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -2964,7 +2939,7 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' && String(c['Código']).trim() !== '9569-53') return false;
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -3097,7 +3072,7 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' && String(c['Código']).trim() !== '9569-53') return false;
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -3328,7 +3303,7 @@
                     const rca1 = String(c.rca1 || '').trim();
                     const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                     if (isAmericanas) return true;
-                    if (rca1 === '53' && String(c['Código']).trim() !== '9569-53') return false;
+                    if (rca1 === '53') return false;
                     return true;
                 });
 
@@ -4031,7 +4006,7 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' && String(c['Código']).trim() !== '9569-53') return false;
+                if (rca1 === '53') return false;
                 return true;
             });
 
