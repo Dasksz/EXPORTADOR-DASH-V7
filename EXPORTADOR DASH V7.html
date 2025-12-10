@@ -227,6 +227,16 @@
             return !isNaN(parseBrazilianNumber(String(value)));
         }
 
+        function normalizeKey(key) {
+            if (!key) return '';
+            const s = String(key).trim();
+            // Remove leading zeros if it's a numeric string
+            if (/^\d+$/.test(s)) {
+                return String(parseInt(s, 10));
+            }
+            return s;
+        }
+
         function validateData(data, fileType, fileName) {
             if (!data || data.length === 0) {
                 throw new Error(`O arquivo '${fileName}' (${fileType}) está vazio ou não contém dados.`);
@@ -348,8 +358,8 @@
 
         const processSalesData = (rawData, clientMap, productMasterMap, newRcaSupervisorMap) => {
             return rawData.map(rawRow => {
-                let codCliStr = String(rawRow['CODCLI']).trim();
-                                const clientInfo = clientMap.get(codCliStr) || {};
+                let codCliStr = normalizeKey(rawRow['CODCLI']);
+                const clientInfo = clientMap.get(codCliStr) || {};
                 
                 // --- INÍCIO DA MODIFICAÇÃO: LÓGICA DE ATRIBUIÇÃO DE VENDEDOR ---
                 
@@ -383,6 +393,7 @@
                 const codUsurVendaCheck = String(rawRow['CODUSUR'] || '').trim();
                 const tipoVendaCheck = String(rawRow['TIPOVENDA'] || 'N/A').trim();
 
+                // Normalize CodCli for 9569 check as well
                 if (!isAmericanas && !(codCliStr === '9569' && (codUsurVendaCheck === '53' || codUsurVendaCheck === '053') && (tipoVendaCheck === '1' || tipoVendaCheck === '9'))) {
                     const rca1Cliente = (clientInfo.rca1 || '').trim();
                     const codUsurVenda = codUsur; // Guarda o CODUSUR original da linha de venda
@@ -554,7 +565,7 @@
                 const remapSalesFor9569 = (dataset) => {
                     for (let i = 0; i < dataset.length; i++) {
                         const row = dataset[i];
-                        const codCli = String(row['CODCLI']).trim();
+                        const codCli = normalizeKey(row['CODCLI']);
                         if (codCli === '9569') {
                             const rca = String(row['CODUSUR'] || '').trim();
                             // Check for 53 or 053
@@ -658,7 +669,7 @@
                 self.postMessage({ type: 'progress', status: 'Processando clientes...', percentage: 50 });
                 const clientMap = new Map();
                 clientsDataRaw.forEach(client => {
-                    const codCli = String(client['Código'] || '').trim();
+                    const codCli = normalizeKey(client['Código']);
                     if (!codCli) return;
 
                     const rca1 = String(client['RCA 1'] || '').trim();
@@ -2237,6 +2248,8 @@
                 let vendorName = 'N/A';
                 if (rcaCode) {
                     vendorName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+                } else if (client.rcas.length === 0 || client.rcas[0] === '') {
+                    vendorName = 'INATIVOS';
                 }
 
                 const rowData = {
@@ -3403,6 +3416,7 @@
                 let sellerName = 'N/A';
                 const rcaCode = client.rcas[0];
                 if (rcaCode) sellerName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+                else if (client.rcas.length === 0 || client.rcas[0] === '') sellerName = 'INATIVOS';
 
                 // Retrieve Stored Goal
                 let metaFat = 0;
@@ -4221,6 +4235,7 @@
                 let sellerName = 'N/A';
                 const rcaCode = client.rcas[0];
                 if (rcaCode) sellerName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+                else if (client.rcas.length === 0 || client.rcas[0] === '') sellerName = 'INATIVOS';
                 const sellerObj = initSeller(sellerName);
 
                 // Initialize client totals for each category
