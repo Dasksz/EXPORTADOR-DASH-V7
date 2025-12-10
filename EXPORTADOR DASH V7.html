@@ -349,8 +349,10 @@
         const processSalesData = (rawData, clientMap, productMasterMap, newRcaSupervisorMap) => {
             return rawData.map(rawRow => {
                 let codCliStr = String(rawRow['CODCLI']).trim();
-                const rawCodUsurCheck = String(rawRow['CODUSUR'] || '').trim();
-                if (codCliStr === '9569' && (rawCodUsurCheck === '53' || rawCodUsurCheck === '053')) {
+
+                // FORCE SEPARATION: Client 9569 + RCA 53 -> New ID
+                const rawCodUsurForCheck = String(rawRow['CODUSUR'] || '').trim();
+                if (parseInt(codCliStr) === 9569 && parseInt(rawCodUsurForCheck) === 53) {
                     codCliStr = '9569-53';
                 }
                 const clientInfo = clientMap.get(codCliStr) || {};
@@ -1218,25 +1220,6 @@
                 const client = getClient(i); // Hydrate object for processing
                 const codCli = String(client['Código']);
 
-                // Note: Modifying 'client' object here DOES NOT persist to Columnar Array automatically.
-                // We are using the hydrated object for Maps.
-                // Since 'allClientsData' is read-only from source essentially, we rely on local Maps for modified state
-                // OR we accept that we can't modify in place easily.
-                // However, the existing code modifies `client['Código']` string conversion.
-                // ColumnarDataset.get() returns a NEW object every time.
-                // So modification here is useless if we access allClientsData.get(i) later.
-
-                // FIX: For Clients, it's safer to keep them as hydrated objects in 'clientMapForKPIs'
-                // and use that map for lookups where modifications matter.
-                // But filter functions iterate 'allClientsData'.
-                // If we need persistent modifications (like Americanas RCA override), we need a side-store.
-                // The Americanas logic modifies `client.rca1`.
-
-                // Workaround: We'll use a `clientOverrides` map or similar,
-                // OR since Clients dataset is small (thousands), we can fully hydrate it into an Array
-                // and avoid Columnar complexity for Clients if it causes mutability issues.
-                // Let's assume for now we just use the calculated values in the Maps.
-
                 client.cidade = client.cidade || 'N/A';
 
                 if ((client.razaoSocial || '').toUpperCase().includes('AMERICANAS')) {
@@ -1248,11 +1231,13 @@
                 if (client.rca1) clientToCurrentSellerMap.set(codCli, String(client.rca1));
                 clientRamoMap.set(codCli, client.ramo || 'N/A');
                 
-
+                // CLEAN SEPARATION FOR CLIENT 9569
                 if (codCli === '9569' && client.rcas) {
-                     // Robustly remove 53 from the client object so it persists for all filters
+                     // Main entity: Strictly remove 53
                      client.rcas = client.rcas.filter(r => String(r).trim() !== '53' && String(r).trim() !== '053');
                 }
+                // Shadow entity (9569-53) is already created in Worker and comes in as a separate item in allClientsData
+                // So we just process 'client' normally now.
 
                 if (client.rcas) {
                     for (let j = 0; j < client.rcas.length; j++) {
@@ -1264,7 +1249,7 @@
                     }
                 }
 
-                optimizedData.searchIndices.clients[i] = { code: codCli, nameLower: (client.nomeCliente || '').toLowerCase(), cityLower: (client.cidade || '').toLowerCase() };
+            optimizedData.searchIndices.clients[i] = { code: codCli, nameLower: (client.nomeCliente || '').toLowerCase(), cityLower: (client.cidade || '').toLowerCase() };
             }
 
             optimizedData.rcasBySupervisor = new Map();
