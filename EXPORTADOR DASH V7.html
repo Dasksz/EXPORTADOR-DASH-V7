@@ -2567,13 +2567,13 @@
                 { id: '707', label: 'EXTRUSADOS', type: 'standard' },
                 { id: '708', label: 'NÃO EXTRUSADOS', type: 'standard' },
                 { id: '752', label: 'TORCIDA', type: 'standard' },
-                { id: 'tonelada_elma', label: 'TONELADA ELMA', type: 'tonnage', isAgg: true },
+                { id: 'tonelada_elma', label: 'PESO ELMA (KG)', type: 'tonnage', isAgg: true },
                 { id: 'mix_salty', label: 'MIX SALTY', type: 'mix', isAgg: true },
                 { id: 'total_foods', label: 'TOTAL FOODS', type: 'standard', isAgg: true },
                 { id: '1119_TODDYNHO', label: 'TODDYNHO', type: 'standard' },
                 { id: '1119_TODDY', label: 'TODDY', type: 'standard' },
                 { id: '1119_QUAKER_KEROCOCO', label: 'QUAKER / KEROCOCO', type: 'standard' },
-                { id: 'tonelada_foods', label: 'TONELADA FOODS', type: 'tonnage', isAgg: true },
+                { id: 'tonelada_foods', label: 'PESO FOODS (KG)', type: 'tonnage', isAgg: true },
                 { id: 'mix_foods', label: 'MIX FOODS', type: 'mix', isAgg: true },
                 { id: 'geral', label: 'GERAL', type: 'geral', isAgg: true },
                 { id: 'pedev', label: 'AUDITORIA PEDEV', type: 'pedev', isAgg: true }
@@ -2608,13 +2608,13 @@
                     merges.push({ s: { r: 1, c: colMap[col.id] }, e: { r: 1, c: colMap[col.id] + 1 } });
                     merges.push({ s: { r: 1, c: colMap[col.id] + 2 }, e: { r: 1, c: colMap[col.id] + 3 } });
                 } else if (col.type === 'tonnage') {
-                    row2.push(createCell("MÉDIA TRIM.", style), createCell("META TON", style), createCell("", style));
+                    row2.push(createCell("MÉDIA TRIM.", style), createCell("META KG", style), createCell("", style));
                     merges.push({ s: { r: 1, c: colMap[col.id] + 1 }, e: { r: 1, c: colMap[col.id] + 2 } });
                 } else if (col.type === 'mix') {
                     row2.push(createCell("MÉDIA TRIM.", style), createCell("META MIX", style), createCell("", style));
                     merges.push({ s: { r: 1, c: colMap[col.id] + 1 }, e: { r: 1, c: colMap[col.id] + 2 } });
                 } else if (col.type === 'geral') {
-                    row2.push(createCell("FATURAMENTO", style), createCell("", style), createCell("TONELADA", style), createCell("POSITIVAÇÃO", style));
+                    row2.push(createCell("FATURAMENTO", style), createCell("", style), createCell("PESO (KG)", style), createCell("POSITIVAÇÃO", style));
                     merges.push({ s: { r: 1, c: colMap[col.id] }, e: { r: 1, c: colMap[col.id] + 1 } });
                 } else {
                     row2.push(createCell("META", style));
@@ -3273,7 +3273,7 @@
                  goalsMixFoodsAdjustments['PEPSICO_ALL'].forEach(val => mixFoodsAdjustment += val);
             }
 
-            const standardSaltyTarget = Math.round(adjustedMixBase * 0.60);
+            const standardSaltyTarget = Math.round(adjustedMixBase * 0.50);
             const standardFoodsTarget = Math.round(adjustedMixBase * 0.30);
 
             if(mixSaltyEl) mixSaltyEl.textContent = (standardSaltyTarget + mixSaltyAdjustment).toLocaleString('pt-BR');
@@ -3360,12 +3360,11 @@
                             }
                         });
 
-                        let activeMonthsCount = 0;
-                        for(let k in monthlySums) { if(monthlySums[k] > 1) activeMonthsCount++; }
-                        const divisor = activeMonthsCount > 0 ? activeMonthsCount : 1;
 
-                        globalTotalAvgFat += (sumFat / divisor);
-                        globalTotalAvgVol += ((sumVol / 1000) / divisor);
+
+
+                        globalTotalAvgFat += (sumFat / QUARTERLY_DIVISOR);
+                        globalTotalAvgVol += (sumVol / QUARTERLY_DIVISOR);
                     }
                 });
                 
@@ -3421,7 +3420,7 @@
                 }
 
                 const avgFat = sumFat / QUARTERLY_DIVISOR;
-                const avgVol = (sumVol / 1000) / QUARTERLY_DIVISOR; 
+                const avgVol = sumVol / QUARTERLY_DIVISOR;
                 
                 let activeMonthsCount = 0;
                 monthlyActivity.forEach(val => { if(val > 1) activeMonthsCount++; });
@@ -3689,7 +3688,7 @@
             });
             
             // Apply 60% / 30% rule
-            const base = type === 'salty' ? Math.round(naturalCount * 0.60) : Math.round(naturalCount * 0.30);
+            const base = type === 'salty' ? Math.round(naturalCount * 0.50) : Math.round(naturalCount * 0.30);
             const adjustment = value - base;
             
             if (type === 'salty') {
@@ -3719,7 +3718,7 @@
                 'CÓD', 'CLIENTE', 'VENDEDOR',
                 ...monthLabels.map(m => `${m} (FAT)`),
                 'MÉDIA FAT', '% SHARE FAT', 'META FAT',
-                'MÉDIA VOL (TON)', '% SHARE VOL', 'META VOL (TON)', 'META POS'
+                'MÉDIA VOL (KG)', '% SHARE VOL', 'META VOL (KG)', 'META POS'
             ];
 
             const ws_data_flat = [flatHeaders];
@@ -3820,7 +3819,7 @@
             if (thead) {
                 const monthHeaders = quarterMonths.map(m => `<th class="px-2 py-2 text-right w-20 bg-blue-900/10 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">${m.label}</th>`).join('');
                 const monthsCount = quarterMonths.length;
-                thead.innerHTML = `<tr><th rowspan="2" class="px-2 py-2 text-center w-16 border-r border-b border-slate-700">CÓD</th><th rowspan="2" class="px-3 py-2 text-left w-48 border-r border-b border-slate-700">CLIENTE</th><th rowspan="2" class="px-3 py-2 text-left w-24 border-r border-b border-slate-700">VENDEDOR</th><th colspan="${3 + monthsCount}" class="px-2 py-1 text-center bg-blue-900/30 text-blue-400 border-r border-slate-700 border-b-0">FATURAMENTO (R$)</th><th colspan="3" class="px-2 py-1 text-center bg-orange-900/30 text-orange-400 border-r border-slate-700 border-b-0">VOLUME (TON)</th><th rowspan="2" class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 font-bold border-b border-slate-700">META POS.</th></tr><tr>${monthHeaders}<th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">MÉDIA</th><th class="px-2 py-2 text-center w-16 bg-blue-900/20 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">% SHARE</th><th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-100 font-bold border-r border-b border-slate-700 text-[10px]">META AUTO</th><th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-300 border-r border-b border-slate-700/50 text-[10px]">MÉDIA KG</th><th class="px-2 py-2 text-center w-16 bg-orange-900/20 text-orange-300 border-r border-b border-slate-700/50 text-[10px]">% SHARE</th><th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-100 font-bold border-r border-b border-slate-700 text-[10px]">META KG</th></tr>`;
+                thead.innerHTML = `<tr><th rowspan="2" class="px-2 py-2 text-center w-16 border-r border-b border-slate-700">CÓD</th><th rowspan="2" class="px-3 py-2 text-left w-48 border-r border-b border-slate-700">CLIENTE</th><th rowspan="2" class="px-3 py-2 text-left w-24 border-r border-b border-slate-700">VENDEDOR</th><th colspan="${3 + monthsCount}" class="px-2 py-1 text-center bg-blue-900/30 text-blue-400 border-r border-slate-700 border-b-0">FATURAMENTO (R$)</th><th colspan="3" class="px-2 py-1 text-center bg-orange-900/30 text-orange-400 border-r border-slate-700 border-b-0">VOLUME (KG)</th><th rowspan="2" class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 font-bold border-b border-slate-700">META POS.</th></tr><tr>${monthHeaders}<th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">MÉDIA</th><th class="px-2 py-2 text-center w-16 bg-blue-900/20 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">% SHARE</th><th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-100 font-bold border-r border-b border-slate-700 text-[10px]">META AUTO</th><th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-300 border-r border-b border-slate-700/50 text-[10px]">MÉDIA KG</th><th class="px-2 py-2 text-center w-16 bg-orange-900/20 text-orange-300 border-r border-b border-slate-700/50 text-[10px]">% SHARE</th><th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-100 font-bold border-r border-b border-slate-700 text-[10px]">META KG</th></tr>`;
             }
 
             const filteredClients = getGoalsFilteredData();
@@ -3899,10 +3898,10 @@
 
                 let activeMonthsCount = 0;
                 monthlyActivity.forEach(val => { if(val > 1) activeMonthsCount++; });
-                const divisor = activeMonthsCount > 0 ? activeMonthsCount : 1;
 
-                const avgFat = cSumFat / divisor;
-                const avgVol = (cSumVol / 1000) / divisor;
+
+                const avgFat = cSumFat / QUARTERLY_DIVISOR;
+                const avgVol = cSumVol / QUARTERLY_DIVISOR;
                 const isActivePrevMonth = cPrevFat > 1 ? 1 : 0;
 
                 let sellerName = 'N/A';
@@ -4062,7 +4061,7 @@
                         }
                     });
                     
-                    const naturalSaltyTarget = Math.round(naturalMixBase * 0.60);
+                    const naturalSaltyTarget = Math.round(naturalMixBase * 0.50);
                     const naturalFoodsTarget = Math.round(naturalMixBase * 0.30);
                     
                     const handleMixCard = (type, naturalTarget, adjustmentsMap, inputId, btnId) => {
@@ -4313,13 +4312,13 @@
                 { id: '707', label: 'EXTRUSADOS', type: 'standard', supplier: '707', brand: null, colorClass: 'text-slate-300' },
                 { id: '708', label: 'NÃO EXTRUSADOS', type: 'standard', supplier: '708', brand: null, colorClass: 'text-slate-300' },
                 { id: '752', label: 'TORCIDA', type: 'standard', supplier: '752', brand: null, colorClass: 'text-slate-300' },
-                { id: 'tonelada_elma', label: 'TONELADA ELMA', type: 'tonnage', isAgg: true, colorClass: 'text-orange-400', components: ['707', '708', '752'] },
+                { id: 'tonelada_elma', label: 'PESO ELMA (KG)', type: 'tonnage', isAgg: true, colorClass: 'text-orange-400', components: ['707', '708', '752'] },
                 { id: 'mix_salty', label: 'MIX SALTY', type: 'mix', isAgg: true, colorClass: 'text-teal-400', components: [] },
                 { id: 'total_foods', label: 'TOTAL FOODS', type: 'standard', isAgg: true, colorClass: 'text-yellow-400', components: ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO'] },
                 { id: '1119_TODDYNHO', label: 'TODDYNHO', type: 'standard', supplier: '1119', brand: 'TODDYNHO', colorClass: 'text-slate-300' },
                 { id: '1119_TODDY', label: 'TODDY', type: 'standard', supplier: '1119', brand: 'TODDY', colorClass: 'text-slate-300' },
                 { id: '1119_QUAKER_KEROCOCO', label: 'QUAKER / KEROCOCO', type: 'standard', supplier: '1119', brand: 'QUAKER_KEROCOCO', colorClass: 'text-slate-300' },
-                { id: 'tonelada_foods', label: 'TONELADA FOODS', type: 'tonnage', isAgg: true, colorClass: 'text-orange-400', components: ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO'] },
+                { id: 'tonelada_foods', label: 'PESO FOODS (KG)', type: 'tonnage', isAgg: true, colorClass: 'text-orange-400', components: ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO'] },
                 { id: 'mix_foods', label: 'MIX FOODS', type: 'mix', isAgg: true, colorClass: 'text-yellow-400', components: [] },
                 { id: 'geral', label: 'GERAL', type: 'geral', isAgg: true, colorClass: 'text-white', components: ['total_elma', 'total_foods'] },
                 { id: 'pedev', label: 'AUDITORIA PEDEV', type: 'pedev', isAgg: true, colorClass: 'text-pink-400', components: ['total_elma'] }
@@ -4421,7 +4420,7 @@
                     const sData = sellerObj.data[cat.id];
 
                     const avgFat = t.fat / QUARTERLY_DIVISOR;
-                    const avgVol = (t.vol / 1000) / QUARTERLY_DIVISOR;
+                    const avgVol = t.vol / QUARTERLY_DIVISOR;
                     const metaPos = t.fat > 1 ? 1 : 0;
 
                     // Fetch Stored Goal
@@ -4536,7 +4535,7 @@
                         sumSalty += mSalty; sumFoods += mFoods;
                     });
 
-                    let mixSaltyMeta = Math.round(activeClientsCount * 0.60);
+                    let mixSaltyMeta = Math.round(activeClientsCount * 0.50);
                     let mixFoodsMeta = Math.round(activeClientsCount * 0.30);
                     if (sellerObj.code === '1001') { mixSaltyMeta = 0; mixFoodsMeta = 0; }
 
@@ -4595,9 +4594,9 @@
                 headerHTML += `</tr><tr>`;
                 svColumns.forEach(col => {
                     if (col.type === 'standard') headerHTML += `<th colspan="${monthsCount + 1}" class="px-1 py-1 text-center border-r border-slate-700/50 bg-slate-800/50">HISTÓRICO FAT.</th><th colspan="2" class="px-1 py-1 text-center border-r border-slate-700/50 bg-slate-800/50">FATURAMENTO</th><th colspan="2" class="px-1 py-1 text-center border-r border-slate-700 bg-slate-800/50">POSITIVAÇÃO</th>`;
-                    else if (col.type === 'tonnage') headerHTML += `<th class="px-1 py-1 text-right border-r border-slate-700/50 bg-slate-800/50">MÉDIA TRIM.</th><th colspan="2" class="px-1 py-1 text-center border-r border-slate-700 bg-slate-800/50">META TON</th>`;
+                    else if (col.type === 'tonnage') headerHTML += `<th class="px-1 py-1 text-right border-r border-slate-700/50 bg-slate-800/50">MÉDIA TRIM.</th><th colspan="2" class="px-1 py-1 text-center border-r border-slate-700 bg-slate-800/50">META KG</th>`;
                     else if (col.type === 'mix') headerHTML += `<th class="px-1 py-1 text-right border-r border-slate-700/50 bg-slate-800/50">MÉDIA TRIM.</th><th colspan="2" class="px-1 py-1 text-center border-r border-slate-700 bg-slate-800/50">META MIX</th>`;
-                    else if (col.type === 'geral') headerHTML += `<th colspan="2" class="px-1 py-1 text-center border-r border-slate-700/50 bg-slate-800/50">FATURAMENTO</th><th class="px-1 py-1 text-center border-r border-slate-700/50 bg-slate-800/50">TONELADA</th><th class="px-1 py-1 text-center border-r border-slate-700 bg-slate-800/50">POSITIVAÇÃO</th>`;
+                    else if (col.type === 'geral') headerHTML += `<th colspan="2" class="px-1 py-1 text-center border-r border-slate-700/50 bg-slate-800/50">FATURAMENTO</th><th class="px-1 py-1 text-center border-r border-slate-700/50 bg-slate-800/50">PESO (KG)</th><th class="px-1 py-1 text-center border-r border-slate-700 bg-slate-800/50">POSITIVAÇÃO</th>`;
                     else if (col.type === 'pedev') headerHTML += `<th class="px-1 py-1 text-center border-r border-slate-700/50 bg-slate-800/50">META</th>`;
                 });
                 headerHTML += `</tr><tr>`;
@@ -11458,7 +11457,7 @@
                                     <!-- Volume Card -->
                                     <div class="bg-[#3c2a21] border border-orange-900/50 rounded-lg p-3 relative overflow-hidden group">
                                         <div class="absolute top-0 left-0 w-1 h-full bg-orange-500"></div>
-                                        <label class="text-[10px] font-bold text-orange-300 uppercase tracking-wider mb-1 block">META VOLUME (TON)</label>
+                                        <label class="text-[10px] font-bold text-orange-300 uppercase tracking-wider mb-1 block">META VOLUME (KG)</label>
                                         <div class="flex gap-2">
                                             <input type="text" id="goal-global-vol" class="w-full bg-[#0f172a] border border-orange-900/50 text-white font-bold text-lg p-2 rounded focus:outline-none focus:border-orange-500" value="0,000">
                                             <button id="btn-distribute-vol" class="bg-orange-600 hover:bg-orange-500 text-white px-3 rounded flex items-center justify-center transition-colors">
@@ -11496,7 +11495,7 @@
                                             </button>
                                         </div>
                                         <div class="flex justify-between text-[10px] text-slate-400 mt-1">
-                                            <span>60% Ativos</span>
+                                            <span>50% Ativos</span>
                                         </div>
                                     </div>
                                     <!-- Mix Foods Card (Hidden by Default) -->
@@ -11558,7 +11557,7 @@
                                                     <th rowspan="2" class="px-3 py-2 text-left w-48 border-r border-b border-slate-700">CLIENTE</th>
                                                     <th rowspan="2" class="px-3 py-2 text-left w-24 border-r border-b border-slate-700">VENDEDOR</th>
                                                     <th colspan="3" class="px-2 py-1 text-center bg-blue-900/30 text-blue-400 border-r border-slate-700 border-b-0">FATURAMENTO (R$)</th>
-                                                    <th colspan="3" class="px-2 py-1 text-center bg-orange-900/30 text-orange-400 border-r border-slate-700 border-b-0">VOLUME (TON)</th>
+                                                    <th colspan="3" class="px-2 py-1 text-center bg-orange-900/30 text-orange-400 border-r border-slate-700 border-b-0">VOLUME (KG)</th>
                                                     <th rowspan="2" class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 font-bold border-b border-slate-700">META POS.</th>
                                                 </tr>
                                                 <tr>
