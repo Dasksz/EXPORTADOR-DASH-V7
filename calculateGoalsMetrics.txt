@@ -1,0 +1,111 @@
+                return { key: k, label: monthNames[parseInt(m)] };
+            });
+        }
+
+        function calculateGoalsMetrics() {
+            if (quarterMonths.length === 0) identifyQuarterMonths();
+
+            // Helper to init metrics structure
+            const createMetric = () => ({
+                fat: 0, vol: 0, prevFat: 0, prevVol: 0,
+                prevClientsSet: new Set(),
+                quarterlyPosClientsSet: new Set(), // New Set for Quarter Active
+                monthlyClientsSets: new Map() // Map<MonthKey, Set<CodCli>>
+            });
+
+            globalGoalsMetrics = {
+                '707': createMetric(),
+                '708': createMetric(),
+                '752': createMetric(),
+                '1119_TODDYNHO': createMetric(),
+                '1119_TODDY': createMetric(),
+                '1119_QUAKER_KEROCOCO': createMetric(),
+                'ELMA_ALL': createMetric(),
+                'FOODS_ALL': createMetric(),
+                'PEPSICO_ALL': createMetric()
+            };
+
+            const currentDate = lastSaleDate;
+            const prevMonthDate = new Date(Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth() - 1, 1));
+            const prevMonthIndex = prevMonthDate.getUTCMonth();
+            const prevMonthYear = prevMonthDate.getUTCFullYear();
+
+            // Filter clients to match the "Active Structure" definition (Same as Coverage/Goals Table)
+            const activeClients = allClientsData.filter(c => {
+                const rca1 = String(c.rca1 || '').trim();
+                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+                if (isAmericanas) return true;
+                if (rca1 === '53' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                return true;
+            });
+
+            activeClients.forEach(client => {
+                const codCli = client['Código'];
+                const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
+
+                // Temp accumulation for this client to ensure Positive Balance check
+                const clientTotals = {}; // key -> { prevFat: 0, monthlyFat: Map<MonthKey, val> }
+
+                if (clientHistoryIds) {
+                    clientHistoryIds.forEach(id => {
+                        const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Summary Metrics
+                        if (String(codCli).trim() === '9569' && (String(sale.CODUSUR).trim() === '53' || String(sale.CODUSUR).trim() === '053')) return;
+
+                        let key = null;
+                        const codFor = String(sale.CODFOR);
+
+                        if (codFor === '707') key = '707';
+                        else if (codFor === '708') key = '708';
+                        else if (codFor === '752') key = '752';
+                        else if (codFor === '1119') {
+                            const desc = normalize(sale.DESCRICAO || '');
+                            if (desc.includes('TODDYNHO')) key = '1119_TODDYNHO';
+                            else if (desc.includes('TODDY')) key = '1119_TODDY';
+                            else if (desc.includes('QUAKER') || desc.includes('KEROCOCO')) key = '1119_QUAKER_KEROCOCO';
+                        }
+
+                        if (key && globalGoalsMetrics[key]) {
+                            const d = parseDate(sale.DTPED);
+                            const isPrevMonth = d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear;
+
+                            // 1. Revenue/Volume metrics (Types 1 & 9) - Global Sums
+                            if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
+                                globalGoalsMetrics[key].fat += sale.VLVENDA;
+                                globalGoalsMetrics[key].vol += sale.TOTPESOLIQ;
+
+                                if (isPrevMonth) {
+                                    globalGoalsMetrics[key].prevFat += sale.VLVENDA;
+                                    globalGoalsMetrics[key].prevVol += sale.TOTPESOLIQ;
+
+                                    // Initialize Client Goal with Prev Month Value
+                                    if (!globalClientGoals.has(codCli)) globalClientGoals.set(codCli, new Map());
+                                    const cGoals = globalClientGoals.get(codCli);
+                                    if (!cGoals.has(key)) cGoals.set(key, { fat: 0, vol: 0 });
+                                    const g = cGoals.get(key);
+                                    g.fat += sale.VLVENDA;
+                                    g.vol += sale.TOTPESOLIQ; // Kg
+                                }
+
+                                // 2. Accumulate for Client Count Check (Balance per period)
+                                if (d) {
+                                if (!clientTotals[key]) clientTotals[key] = { prevFat: 0, monthlyFat: new Map() };
+
+                                if (isPrevMonth) clientTotals[key].prevFat += sale.VLVENDA;
+
+                                const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+                                const currentMVal = clientTotals[key].monthlyFat.get(monthKey) || 0;
+                                clientTotals[key].monthlyFat.set(monthKey, currentMVal + sale.VLVENDA);
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Check thresholds for this client
+                for (const key in clientTotals) {
+                    const t = clientTotals[key];
+                    if (t.prevFat > 1) {
+                        globalGoalsMetrics[key].prevClientsSet.add(codCli);
+                    }
+                    t.monthlyFat.forEach((val, mKey) => {

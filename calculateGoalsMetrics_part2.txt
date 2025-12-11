@@ -1,0 +1,40 @@
+                        if (val > 1) {
+                            if (!globalGoalsMetrics[key].monthlyClientsSets.has(mKey)) {
+                                globalGoalsMetrics[key].monthlyClientsSets.set(mKey, new Set());
+                            }
+                            globalGoalsMetrics[key].monthlyClientsSets.get(mKey).add(codCli);
+                        }
+                    });
+                }
+            });
+
+            // Calculate Averages and Finalize
+            // First calculate basic metrics for leaf keys
+            const leafKeys = ['707', '708', '752', '1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO'];
+
+            // Helper for aggregation
+            const aggregateToAll = (targetKey, sourceKeys) => {
+                const target = globalGoalsMetrics[targetKey];
+                sourceKeys.forEach(key => {
+                    const source = globalGoalsMetrics[key];
+                    target.fat += source.fat;
+                    target.vol += source.vol;
+                    target.prevFat += source.prevFat;
+                    target.prevVol += source.prevVol; // Already raw, keep raw for now
+
+                    source.prevClientsSet.forEach(c => target.prevClientsSet.add(c));
+                    source.quarterlyPosClientsSet.forEach(c => target.quarterlyPosClientsSet.add(c));
+
+                    source.monthlyClientsSets.forEach((set, monthKey) => {
+                        if (!target.monthlyClientsSets.has(monthKey)) {
+                            target.monthlyClientsSets.set(monthKey, new Set());
+                        }
+                        const targetSet = target.monthlyClientsSets.get(monthKey);
+                        set.forEach(c => targetSet.add(c));
+                    });
+                });
+            };
+
+            aggregateToAll('ELMA_ALL', ['707', '708', '752']);
+            aggregateToAll('FOODS_ALL', ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO']);
+            aggregateToAll('PEPSICO_ALL', ['707', '708', '752', '1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO']);

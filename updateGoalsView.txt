@@ -1,0 +1,401 @@
+            XLSX.utils.book_append_sheet(wb, ws_flat, "Metas GV");
+            XLSX.writeFile(wb, `Metas_GV_${currentGoalsSupplier}_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        function updateGoalsView() {
+            goalsRenderId++;
+            const currentRenderId = goalsRenderId;
+
+            // Check if we are in Summary Mode
+            if (document.getElementById('goals-summary-content') && !document.getElementById('goals-summary-content').classList.contains('hidden')) {
+                updateGoalsSummaryView();
+                return;
+            }
+
+            if (quarterMonths.length === 0) identifyQuarterMonths();
+
+            // Update Header (Dynamic) - Same as before
+            const thead = document.querySelector('#goals-table-container table thead');
+            if (thead) {
+                const monthHeaders = quarterMonths.map(m => `<th class="px-2 py-2 text-right w-20 bg-blue-900/10 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">${m.label}</th>`).join('');
+                const monthsCount = quarterMonths.length;
+                thead.innerHTML = `<tr><th rowspan="2" class="px-2 py-2 text-center w-16 border-r border-b border-slate-700">CÓD</th><th rowspan="2" class="px-3 py-2 text-left w-48 border-r border-b border-slate-700">CLIENTE</th><th rowspan="2" class="px-3 py-2 text-left w-24 border-r border-b border-slate-700">VENDEDOR</th><th colspan="${3 + monthsCount}" class="px-2 py-1 text-center bg-blue-900/30 text-blue-400 border-r border-slate-700 border-b-0">FATURAMENTO (R$)</th><th colspan="3" class="px-2 py-1 text-center bg-orange-900/30 text-orange-400 border-r border-slate-700 border-b-0">VOLUME (KG)</th><th rowspan="2" class="px-2 py-2 text-center w-16 bg-purple-900/20 text-purple-300 font-bold border-b border-slate-700">META POS.</th></tr><tr>${monthHeaders}<th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">MÉDIA</th><th class="px-2 py-2 text-center w-16 bg-blue-900/20 text-blue-300 border-r border-b border-slate-700/50 text-[10px]">% SHARE</th><th class="px-2 py-2 text-right w-24 bg-blue-900/20 text-blue-100 font-bold border-r border-b border-slate-700 text-[10px]">META AUTO</th><th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-300 border-r border-b border-slate-700/50 text-[10px]">MÉDIA KG</th><th class="px-2 py-2 text-center w-16 bg-orange-900/20 text-orange-300 border-r border-b border-slate-700/50 text-[10px]">% SHARE</th><th class="px-2 py-2 text-right w-24 bg-orange-900/20 text-orange-100 font-bold border-r border-b border-slate-700 text-[10px]">META KG</th></tr>`;
+            }
+
+            const filteredClients = getGoalsFilteredData();
+            goalsGvTableBody.innerHTML = '<tr><td colspan="15" class="text-center p-8"><svg class="animate-spin h-8 w-8 text-teal-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></td></tr>';
+
+            // Cache Key for Global Totals
+            const cacheKey = currentGoalsSupplier + (currentGoalsBrand ? `_${currentGoalsBrand}` : '');
+
+            if (!globalGoalsTotalsCache[cacheKey]) {
+                 calculateDistributedGoals([], currentGoalsSupplier, currentGoalsBrand, 0, 0);
+            }
+
+            const currentDate = lastSaleDate;
+            const prevMonthDate = new Date(Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth() - 1, 1));
+            const prevMonthIndex = prevMonthDate.getUTCMonth();
+            const prevMonthYear = prevMonthDate.getUTCFullYear();
+
+            // Helper for inclusion check
+            const shouldIncludeSale = (sale, supplier, brand) => {
+                const codFor = String(sale.CODFOR);
+                if (supplier === 'PEPSICO_ALL') { if (!['707', '708', '752', '1119'].includes(codFor)) return false; }
+                else if (supplier === 'ELMA_ALL') { if (!['707', '708', '752'].includes(codFor)) return false; }
+                else if (supplier === 'FOODS_ALL') { if (codFor !== '1119') return false; }
+                else {
+                    if (codFor !== supplier) return false;
+                    if (brand) {
+                        const desc = normalize(sale.DESCRICAO || '');
+                        if (brand === 'TODDYNHO') { if (!desc.includes('TODDYNHO')) return false; }
+                        else if (brand === 'TODDY') { if (!desc.includes('TODDY') || desc.includes('TODDYNHO')) return false; }
+                        else if (brand === 'QUAKER_KEROCOCO') { if (!desc.includes('QUAKER') && !desc.includes('KEROCOCO')) return false; }
+                    }
+                }
+                return true;
+            };
+
+            const globalTotalAvgFat = globalGoalsTotalsCache[cacheKey].fat;
+            const globalTotalAvgVol = globalGoalsTotalsCache[cacheKey].vol;
+
+            const clientMetrics = [];
+            let sumFat = 0; let sumVol = 0;
+            let totalAvgFat = 0; let totalPrevFat = 0; let totalAvgVol = 0; let totalPrevVol = 0; let sumActiveMonths = 0; let totalPrevClients = 0;
+
+            runAsyncChunked(filteredClients, (client) => {
+                const codCli = client['Código'];
+                const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
+
+                let cSumFat = 0; let cSumVol = 0; let cPrevFat = 0; let cPrevVol = 0;
+                const monthlyActivity = new Map();
+                const monthlyValues = {};
+                quarterMonths.forEach(m => monthlyValues[m.key] = 0);
+
+                if (clientHistoryIds) {
+                    clientHistoryIds.forEach(id => {
+                        const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Portfolio Average
+                        if (String(codCli).trim() === '9569' && (String(sale.CODUSUR).trim() === '53' || String(sale.CODUSUR).trim() === '053')) return;
+
+                        if (shouldIncludeSale(sale, currentGoalsSupplier, currentGoalsBrand)) {
+                            if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
+                                cSumFat += sale.VLVENDA;
+                                cSumVol += sale.TOTPESOLIQ;
+                                const d = parseDate(sale.DTPED);
+                                if (d) {
+                                    if (d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear) {
+                                        cPrevFat += sale.VLVENDA;
+                                        cPrevVol += sale.TOTPESOLIQ;
+                                    }
+                                    const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+                                    monthlyActivity.set(monthKey, (monthlyActivity.get(monthKey) || 0) + sale.VLVENDA);
+                                    if (monthlyValues.hasOwnProperty(monthKey)) monthlyValues[monthKey] += sale.VLVENDA;
+                                }
+                            }
+                        }
+                    });
+                }
+
+                let activeMonthsCount = 0;
+                monthlyActivity.forEach(val => { if(val > 1) activeMonthsCount++; });
+                const divisor = QUARTERLY_DIVISOR;
+                const avgFat = cSumFat / divisor;
+                const avgVol = cSumVol / divisor;
+                const isActivePrevMonth = cPrevFat > 1 ? 1 : 0;
+
+                let sellerName = 'N/A';
+                const rcaCode = client.rcas[0];
+                if (rcaCode) sellerName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+
+                // Retrieve Stored Goal
+                let metaFat = 0; let metaVol = 0;
+                if (currentGoalsSupplier === 'ELMA_ALL' || currentGoalsSupplier === 'FOODS_ALL' || currentGoalsSupplier === 'PEPSICO_ALL') {
+                    if (globalClientGoals.has(codCli)) {
+                        const cGoals = globalClientGoals.get(codCli);
+                        let keysToSum = [];
+                        if (currentGoalsSupplier === 'ELMA_ALL') keysToSum = ['707', '708', '752'];
+                        else if (currentGoalsSupplier === 'FOODS_ALL') keysToSum = ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO'];
+                        else if (currentGoalsSupplier === 'PEPSICO_ALL') keysToSum = ['707', '708', '752', '1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO'];
+
+                        keysToSum.forEach(k => { if (cGoals.has(k)) { const g = cGoals.get(k); metaFat += g.fat; metaVol += g.vol; } });
+                    }
+                } else {
+                    if (globalClientGoals.has(codCli)) {
+                        const cGoals = globalClientGoals.get(codCli);
+                        if (cGoals.has(cacheKey)) { const g = cGoals.get(cacheKey); metaFat = g.fat; metaVol = g.vol; }
+                    }
+                }
+
+                const metaPos = cSumFat > 1 ? 1 : 0;
+
+                const metric = {
+                    cod: codCli, name: client.fantasia || client.razaoSocial, seller: sellerName,
+                    avgFat, avgVol, prevFat: cPrevFat, prevVol: cPrevVol,
+                    activeMonthsCount, isActivePrevMonth,
+                    shareFat: globalTotalAvgFat > 0 ? (avgFat / globalTotalAvgFat) : 0,
+                    shareVol: globalTotalAvgVol > 0 ? (avgVol / globalTotalAvgVol) : 0,
+                    metaFat, metaVol, metaPos, monthlyValues
+                };
+                clientMetrics.push(metric);
+
+                // Accumulate totals
+                sumFat += metaFat; sumVol += metaVol;
+                totalAvgFat += avgFat; totalPrevFat += cPrevFat;
+                totalAvgVol += avgVol; totalPrevVol += cPrevVol;
+                sumActiveMonths += activeMonthsCount; totalPrevClients += isActivePrevMonth;
+
+            }, () => {
+                if (currentRenderId !== goalsRenderId) return;
+
+                // Finalize Render
+                const totalAvgClients = sumActiveMonths / QUARTERLY_DIVISOR;
+
+                const fatInput = document.getElementById('goal-global-fat');
+                const volInput = document.getElementById('goal-global-vol');
+                const btnDistributeFat = document.getElementById('btn-distribute-fat');
+                const btnDistributeVol = document.getElementById('btn-distribute-vol');
+                const isAggregatedTab = currentGoalsSupplier === 'ELMA_ALL' || currentGoalsSupplier === 'FOODS_ALL' || currentGoalsSupplier === 'PEPSICO_ALL';
+
+                if (fatInput) {
+                    if (document.activeElement !== fatInput) {
+                        const displayFat = (sumFat === 0 && totalPrevFat > 0) ? totalPrevFat : sumFat;
+                        fatInput.value = displayFat.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    }
+                    fatInput.readOnly = false; fatInput.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+                if (volInput) {
+                    if (document.activeElement !== volInput) {
+                        const displayVol = (sumVol === 0 && totalPrevVol > 0) ? totalPrevVol : sumVol;
+                        volInput.value = displayVol.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+                    }
+                    volInput.readOnly = false; volInput.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+                if (btnDistributeFat) btnDistributeFat.style.display = '';
+                if (btnDistributeVol) btnDistributeVol.style.display = '';
+
+                // KPIs
+                const refAvgFat = document.getElementById('ref-avg-fat'); if(refAvgFat) refAvgFat.textContent = totalAvgFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const refPrevFat = document.getElementById('ref-prev-fat'); if(refPrevFat) refPrevFat.textContent = totalPrevFat.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const refAvgVol = document.getElementById('ref-avg-vol'); if(refAvgVol) refAvgVol.textContent = totalAvgVol.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Kg';
+                const refPrevVol = document.getElementById('ref-prev-vol'); if(refPrevVol) refPrevVol.textContent = totalPrevVol.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Kg';
+                const refAvgClients = document.getElementById('ref-avg-clients'); if(refAvgClients) refAvgClients.textContent = totalAvgClients.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+                const refPrevClients = document.getElementById('ref-prev-clients'); if(refPrevClients) refPrevClients.textContent = totalPrevClients.toLocaleString('pt-BR');
+
+                clientMetrics.sort((a, b) => b.metaFat - a.metaFat);
+
+                const goalMixInput = document.getElementById('goal-global-mix');
+                const btnDistributeMix = document.getElementById('btn-distribute-mix');
+                const naturalTotalPos = clientMetrics.reduce((sum, item) => sum + item.metaPos, 0);
+                const isSingleSeller = selectedGoalsGvSellers.length === 1;
+
+                if (goalMixInput) {
+                    const newMixInput = goalMixInput.cloneNode(true);
+                    goalMixInput.parentNode.replaceChild(newMixInput, goalMixInput);
+
+                    // Calculate Total Adjustment for Current View Context
+                    let contextAdjustment = 0;
+                    const adjustmentMap = goalsPosAdjustments[currentGoalsSupplier];
+
+                    if (adjustmentMap) {
+                        if (isSingleSeller) {
+                            // Specific Seller Context
+                            contextAdjustment = adjustmentMap.get(selectedGoalsGvSellers[0]) || 0;
+                        } else {
+                            const visibleSellers = new Set(clientMetrics.map(c => c.seller));
+                            adjustmentMap.forEach((val, seller) => {
+                                if (visibleSellers.has(seller)) {
+                                    contextAdjustment += val;
+                                }
+                            });
+                        }
+                    }
+
+                    const displayPos = naturalTotalPos + contextAdjustment;
+                    newMixInput.value = displayPos.toLocaleString('pt-BR');
+
+                    if (isAggregatedTab && isSingleSeller) {
+                        newMixInput.readOnly = false;
+                        newMixInput.classList.remove('opacity-50', 'cursor-not-allowed');
+
+                        if(btnDistributeMix) {
+                            const newBtnDistributeMix = btnDistributeMix.cloneNode(true);
+                            btnDistributeMix.parentNode.replaceChild(newBtnDistributeMix, btnDistributeMix);
+                            newBtnDistributeMix.style.display = '';
+
+                            newBtnDistributeMix.addEventListener('click', () => {
+                                const valStr = newMixInput.value;
+                                const filterDesc = getFilterDescription();
+                                showConfirmationModal(`Confirmar ajuste de Meta Positivação para ${valStr} (Cliente: ${filterDesc})?`, () => {
+                                    const val = parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0;
+                                    const newAdjustment = val - naturalTotalPos;
+                                    if (adjustmentMap) {
+                                        adjustmentMap.set(selectedGoalsGvSellers[0], newAdjustment);
+                                        updateGoalsView();
+                                    }
+                                });
+                            });
+                        }
+                    } else {
+                        newMixInput.readOnly = true;
+                        newMixInput.classList.add('opacity-50', 'cursor-not-allowed');
+                        if(btnDistributeMix) btnDistributeMix.style.display = 'none';
+                    }
+                }
+
+                // --- MIX SALTY & FOODS CARDS LOGIC (PEPSICO ONLY) ---
+                const cardMixSalty = document.getElementById('card-mix-salty');
+                const cardMixFoods = document.getElementById('card-mix-foods');
+
+                if (currentGoalsSupplier === 'PEPSICO_ALL') {
+                    if(cardMixSalty) cardMixSalty.classList.remove('hidden');
+                    if(cardMixFoods) cardMixFoods.classList.remove('hidden');
+
+                    // Logic to populate values and handle edit
+                    let naturalMixBase = 0;
+                    const visibleSellers = new Set();
+                    clientMetrics.forEach(c => {
+                        visibleSellers.add(c.seller);
+                        // Check if not seller 1001 (Americanas)
+                        const sellerCode = optimizedData.rcaCodeByName.get(c.seller) || '';
+                        if (sellerCode !== '1001') {
+                            if (c.metaPos > 0) naturalMixBase++; // Count positivations in PEPSICO_ALL (Total Pos)
+                        }
+                    });
+
+                    // Incorporate Positivação Adjustments to Base
+                    let totalPosAdjustment = 0;
+                    if (goalsPosAdjustments['PEPSICO_ALL']) {
+                        goalsPosAdjustments['PEPSICO_ALL'].forEach((val, sellerName) => {
+                            if (visibleSellers.has(sellerName)) {
+                                totalPosAdjustment += val;
+                            }
+                        });
+                    }
+                    const adjustedMixBase = naturalMixBase + totalPosAdjustment;
+
+                    const naturalSaltyTarget = Math.round(adjustedMixBase * 0.50);
+                    const naturalFoodsTarget = Math.round(adjustedMixBase * 0.30);
+
+                    const handleMixCard = (type, naturalTarget, adjustmentsMap, inputId, btnId) => {
+                        let adj = 0;
+                        if (isSingleSeller) {
+                            adj = adjustmentsMap.get(selectedGoalsGvSellers[0]) || 0;
+                        } else {
+                            const visibleSellers = new Set(clientMetrics.map(c => c.seller));
+                            adjustmentsMap.forEach((val, seller) => {
+                                if (visibleSellers.has(seller)) adj += val;
+                            });
+                        }
+
+                        const displayVal = naturalTarget + adj;
+                        const input = document.getElementById(inputId);
+                        const btn = document.getElementById(btnId);
+
+                        if(input) {
+                            input.value = displayVal.toLocaleString('pt-BR');
+
+                            if (isSingleSeller) {
+                                input.readOnly = false;
+                                input.classList.remove('opacity-50', 'cursor-not-allowed');
+                                if(btn) btn.style.display = '';
+                            } else {
+                                input.readOnly = true;
+                                input.classList.add('opacity-50', 'cursor-not-allowed');
+                                if(btn) btn.style.display = 'none';
+                            }
+                        }
+                    };
+
+                    if (goalsMixSaltyAdjustments['PEPSICO_ALL']) {
+                        handleMixCard('Salty', naturalSaltyTarget, goalsMixSaltyAdjustments['PEPSICO_ALL'], 'goal-global-mix-salty', 'btn-distribute-mix-salty');
+                    }
+                    if (goalsMixFoodsAdjustments['PEPSICO_ALL']) {
+                        handleMixCard('Foods', naturalFoodsTarget, goalsMixFoodsAdjustments['PEPSICO_ALL'], 'goal-global-mix-foods', 'btn-distribute-mix-foods');
+                    }
+
+                } else {
+                    if(cardMixSalty) cardMixSalty.classList.add('hidden');
+                    if(cardMixFoods) cardMixFoods.classList.add('hidden');
+                }
+
+                goalsTableState.filteredData = clientMetrics;
+                goalsTableState.totalPages = Math.ceil(clientMetrics.length / goalsTableState.itemsPerPage);
+                if (goalsTableState.currentPage > goalsTableState.totalPages && goalsTableState.totalPages > 0) goalsTableState.currentPage = goalsTableState.totalPages;
+                else if (goalsTableState.totalPages === 0) goalsTableState.currentPage = 1;
+
+                const startIndex = (goalsTableState.currentPage - 1) * goalsTableState.itemsPerPage;
+                const endIndex = startIndex + goalsTableState.itemsPerPage;
+                const pageData = clientMetrics.slice(startIndex, endIndex);
+                const paginationControls = document.getElementById('goals-pagination-controls');
+                const pageInfo = document.getElementById('goals-page-info-text');
+                const prevBtn = document.getElementById('goals-prev-page-btn');
+                const nextBtn = document.getElementById('goals-next-page-btn');
+
+                if (clientMetrics.length === 0) {
+                    goalsGvTableBody.innerHTML = `<tr><td colspan="${12 + quarterMonths.length}" class="text-center p-4 text-slate-500">Nenhum cliente encontrado nos filtros para este fornecedor.</td></tr>`;
+                    if (paginationControls) paginationControls.classList.add('hidden');
+                } else {
+                    const rows = pageData.map(item => {
+                        const monthCells = quarterMonths.map(m => `<td class="px-2 py-2 text-right text-slate-400 border-r border-slate-800/50 text-[10px] bg-blue-900/5">${(item.monthlyValues[m.key] || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`).join('');
+                        return `<tr class="hover:bg-slate-800 group transition-colors border-b border-slate-800"><td class="px-2 py-2 text-center border-r border-slate-800 bg-[#151c36] text-xs text-slate-300">${item.cod}</td><td class="px-2 py-2 text-left border-r border-slate-800 bg-[#151c36] text-xs font-bold text-white truncate max-w-[200px]" title="${item.name}">${item.name.substring(0, 30)}</td><td class="px-2 py-2 text-left border-r border-slate-800 bg-[#151c36] text-[10px] text-slate-400 uppercase">${getFirstName(item.seller)}</td>${monthCells}<td class="px-2 py-2 text-right text-slate-300 font-medium bg-blue-900/10 border-r border-slate-800/50 text-xs">${item.avgFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-2 py-2 text-center text-blue-400 text-xs bg-blue-900/10 border-r border-slate-800/50">${(item.shareFat * 100).toFixed(2)}%</td><td class="px-2 py-2 text-right font-bold text-blue-200 bg-blue-900/20 border-r border-slate-800 text-xs">${item.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-2 py-2 text-right text-slate-300 font-medium bg-orange-900/10 border-r border-slate-800/50 text-xs">${item.avgVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Kg</td><td class="px-2 py-2 text-center text-orange-400 text-xs bg-orange-900/10 border-r border-slate-800/50">${(item.shareVol * 100).toFixed(2)}%</td><td class="px-2 py-2 text-right font-bold text-orange-200 bg-orange-900/20 border-r border-slate-800 text-xs">${item.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Kg</td><td class="px-2 py-2 text-center font-bold text-purple-300 bg-purple-900/10 text-xs">${item.metaPos}</td></tr>`;
+                    }).join('');
+                    goalsGvTableBody.innerHTML = rows;
+                    if (paginationControls) {
+                        paginationControls.classList.remove('hidden');
+
+                        let exportBtn = document.getElementById('btn-export-goals-gv');
+                        if (!exportBtn) {
+                             const btnContainer = document.createElement('div');
+                             btnContainer.className = "flex items-center ml-4";
+                             btnContainer.innerHTML = `<button id="btn-export-goals-gv" class="flex items-center space-x-1 text-xs font-bold text-green-400 hover:text-green-300 border border-green-500/30 hover:border-green-500/50 bg-green-500/10 hover:bg-green-500/20 px-3 py-1.5 rounded transition-colors" title="Exportar tabela completa (XLSX)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <span>XLSX</span>
+                                </button>`;
+                             pageInfo.parentNode.insertBefore(btnContainer, pageInfo.nextSibling);
+                             document.getElementById('btn-export-goals-gv').addEventListener('click', exportGoalsCurrentTabXLSX);
+                        }
+
+                        pageInfo.textContent = `Página ${goalsTableState.currentPage} de ${goalsTableState.totalPages} (Total: ${clientMetrics.length})`;
+                        prevBtn.disabled = goalsTableState.currentPage === 1;
+                        nextBtn.disabled = goalsTableState.currentPage === goalsTableState.totalPages;
+                    }
+                }
+            }, () => currentRenderId !== goalsRenderId);
+        }
+
+        function getGoalsSvFilteredData() {
+            const supervisorsSet = new Set(selectedGoalsSvSupervisors);
+
+            let clients = allClientsData;
+
+            clients = clients.filter(c => {
+                const rca1 = String(c.rca1 || '').trim();
+                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+                if (isAmericanas) return true;
+                if (rca1 === '53') return false;
+                return true;
+            });
+
+            if (supervisorsSet.size > 0) {
+                const rcasSet = new Set();
+                supervisorsSet.forEach(sup => {
+                    (optimizedData.rcasBySupervisor.get(sup) || []).forEach(rca => rcasSet.add(rca));
+                });
+                clients = clients.filter(c => c.rcas.some(r => rcasSet.has(r)));
+            }
+
+            return clients;
+        }
+
+        function recalculateGoalsSvTotals(input) {
+            const { supId, colId, field, sellerId } = input.dataset;
+
+            // Helper to parse input value
+            const parseVal = (str) => {
+                let val = parseFloat(str.replace(/\./g, '').replace(',', '.'));
+                return isNaN(val) ? 0 : val;
+            };
+
+            // Helper to calculate and update column totals (Supervisor and Grand)

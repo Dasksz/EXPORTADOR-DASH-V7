@@ -1894,11 +1894,11 @@
                 // Check thresholds for this client
                 for (const key in clientTotals) {
                     const t = clientTotals[key];
-                    if (t.prevFat > 1) {
+                    if (t.prevFat > 0) {
                         globalGoalsMetrics[key].prevClientsSet.add(codCli);
                     }
                     t.monthlyFat.forEach((val, mKey) => {
-                        if (val > 1) {
+                        if (val > 0) {
                             if (!globalGoalsMetrics[key].monthlyClientsSets.has(mKey)) {
                                 globalGoalsMetrics[key].monthlyClientsSets.set(mKey, new Set());
                             }
@@ -3047,15 +3047,15 @@
                     let totalQuarterFat = 0;
                     t.monthlyFat.forEach(val => totalQuarterFat += val);
 
-                    if (totalQuarterFat > 1) {
+                    if (totalQuarterFat > 0) {
                         metricsMap[key].quarterlyPosClientsSet.add(codCli);
                     }
 
-                    if (t.prevFat > 1) {
+                    if (t.prevFat > 0) {
                         metricsMap[key].prevClientsSet.add(codCli);
                     }
                     t.monthlyFat.forEach((val, mKey) => {
-                        if (val > 1) {
+                        if (val > 0) {
                             if (!metricsMap[key].monthlyClientsSets.has(mKey)) {
                                 metricsMap[key].monthlyClientsSets.set(mKey, new Set());
                             }
@@ -3415,7 +3415,7 @@
                 const avgVol = sumVol / QUARTERLY_DIVISOR; // Kg (No / 1000)
                 
                 let activeMonthsCount = 0;
-                monthlyActivity.forEach(val => { if(val > 1) activeMonthsCount++; });
+                monthlyActivity.forEach(val => { if(val > 0) activeMonthsCount++; });
 
                 const isActivePrevMonth = prevFat > 1 ? 1 : 0;
 
@@ -3455,7 +3455,7 @@
                     }
                 }
 
-                const metaPos = sumFat > 1 ? 1 : 0; // Positivado se venda > 1 (threshold padrão)
+                const metaPos = sumFat > 0 ? 1 : 0; // Positivado se venda > 1 (threshold padrão)
 
                 clientMetrics.push({
                     cod: codCli,
@@ -3896,11 +3896,11 @@
                 }
 
                 let activeMonthsCount = 0;
-                monthlyActivity.forEach(val => { if(val > 1) activeMonthsCount++; });
+                monthlyActivity.forEach(val => { if(val > 0) activeMonthsCount++; });
                 const divisor = QUARTERLY_DIVISOR;
                 const avgFat = cSumFat / divisor;
                 const avgVol = cSumVol / divisor;
-                const isActivePrevMonth = cPrevFat > 1 ? 1 : 0;
+                const isActivePrevMonth = cPrevFat > 0 ? 1 : 0;
 
                 let sellerName = 'N/A';
                 const rcaCode = client.rcas[0];
@@ -3925,7 +3925,7 @@
                     }
                 }
 
-                const metaPos = cSumFat > 1 ? 1 : 0;
+                const metaPos = cSumFat > 0 ? 1 : 0;
 
                 const metric = {
                     cod: codCli, name: client.fantasia || client.razaoSocial, seller: sellerName,
@@ -4054,9 +4054,11 @@
                     const visibleSellers = new Set();
                     clientMetrics.forEach(c => {
                         visibleSellers.add(c.seller);
-                        // Check if not seller 1001 (Americanas)
-                        const sellerCode = optimizedData.rcaCodeByName.get(c.seller) || '';
-                        if (sellerCode !== '1001') {
+                        // Check if not seller 1001 (Americanas) using robust client map lookup
+                        const client = clientMapForKPIs.get(String(c.cod));
+                        const rca1 = client ? String(client.rca1 || '').trim() : '';
+
+                        if (rca1 !== '1001') {
                             if (c.metaPos > 0) naturalMixBase++; // Count positivations in PEPSICO_ALL (Total Pos)
                         }
                     });

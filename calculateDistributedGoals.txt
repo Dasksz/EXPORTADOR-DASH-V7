@@ -1,0 +1,121 @@
+            if(mixFoodsEl) mixFoodsEl.textContent = (standardFoodsTarget + mixFoodsAdjustment).toLocaleString('pt-BR');
+        }
+
+                function calculateDistributedGoals(filteredClients, currentGoalsSupplier, currentGoalsBrand, goalFat, goalVol) {
+            const cacheKey = currentGoalsSupplier + (currentGoalsBrand ? `_${currentGoalsBrand}` : '');
+
+            if (quarterMonths.length === 0) identifyQuarterMonths();
+
+            // Determine dates for Previous Month calc
+            const currentDate = lastSaleDate;
+            const prevMonthDate = new Date(Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth() - 1, 1));
+            const prevMonthIndex = prevMonthDate.getUTCMonth();
+            const prevMonthYear = prevMonthDate.getUTCFullYear();
+
+            // --- CÁLCULO DOS TOTAIS GLOBAIS (EMPRESA) PARA O FORNECEDOR/MARCA ATUAL ---
+            let globalTotalAvgFat = 0;
+            let globalTotalAvgVol = 0;
+
+            const shouldIncludeSale = (sale, supplier, brand) => {
+                const codFor = String(sale.CODFOR);
+                if (supplier === 'PEPSICO_ALL') {
+                    // Includes everything
+                    if (!['707', '708', '752', '1119'].includes(codFor)) return false;
+                } else if (supplier === 'ELMA_ALL') {
+                    if (!['707', '708', '752'].includes(codFor)) return false;
+                } else if (supplier === 'FOODS_ALL') {
+                    // Include all brands of 1119 that are in sub-tabs
+                    if (codFor !== '1119') return false;
+                    // No brand filtering here, assuming 1119 contains mostly Foods
+                } else {
+                    if (codFor !== supplier) return false;
+                    if (brand) {
+                        const desc = normalize(sale.DESCRICAO || '');
+                        if (brand === 'TODDYNHO') {
+                            if (!desc.includes('TODDYNHO')) return false;
+                        } else if (brand === 'TODDY') {
+                            if (!desc.includes('TODDY') || desc.includes('TODDYNHO')) return false;
+                        } else if (brand === 'QUAKER_KEROCOCO') {
+                            if (!desc.includes('QUAKER') && !desc.includes('KEROCOCO')) return false;
+                        }
+                    }
+                }
+                return true;
+            };
+
+            if (globalGoalsTotalsCache[cacheKey]) {
+                globalTotalAvgFat = globalGoalsTotalsCache[cacheKey].fat;
+                globalTotalAvgVol = globalGoalsTotalsCache[cacheKey].vol;
+            } else {
+                const allActiveClients = allClientsData.filter(c => {
+                    const rca1 = String(c.rca1 || '').trim();
+                    const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+                    if (isAmericanas) return true;
+                    if (rca1 === '53') return false;
+                    return true;
+                });
+
+                allActiveClients.forEach(client => {
+                    const codCli = client['Código'];
+                    const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
+                    if (clientHistoryIds) {
+                        let sumFat = 0;
+                        let sumVol = 0;
+                        clientHistoryIds.forEach(id => {
+                            const sale = optimizedData.historyById.get(id);
+                            // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Global Portfolio Totals
+                            if (String(codCli).trim() === '9569' && (String(sale.CODUSUR).trim() === '53' || String(sale.CODUSUR).trim() === '053')) return;
+
+                            if (shouldIncludeSale(sale, currentGoalsSupplier, currentGoalsBrand)) {
+                                if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
+                                    sumFat += sale.VLVENDA;
+                                    sumVol += sale.TOTPESOLIQ;
+                                }
+                            }
+                        });
+
+                        // NEW LOGIC: Simple Average (Sum / 3) regardless of active months
+                        globalTotalAvgFat += (sumFat / QUARTERLY_DIVISOR);
+                        globalTotalAvgVol += (sumVol / QUARTERLY_DIVISOR); // Kg (No / 1000)
+                    }
+                });
+
+                globalGoalsTotalsCache[cacheKey] = { fat: globalTotalAvgFat, vol: globalTotalAvgVol };
+            }
+
+            const clientMetrics = [];
+
+            filteredClients.forEach(client => {
+                const codCli = client['Código'];
+                const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
+
+                let sumFat = 0;
+                let sumVol = 0;
+                let prevFat = 0;
+                let prevVol = 0;
+                const monthlyActivity = new Map(); // MonthKey -> Fat
+
+                // Initialize monthly values for breakdown
+                const monthlyValues = {};
+                quarterMonths.forEach(m => monthlyValues[m.key] = 0);
+
+                if (clientHistoryIds) {
+                    clientHistoryIds.forEach(id => {
+                        const sale = optimizedData.historyById.get(id);
+                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Portfolio Average
+                        if (String(codCli).trim() === '9569' && (String(sale.CODUSUR).trim() === '53' || String(sale.CODUSUR).trim() === '053')) return;
+
+                        if (shouldIncludeSale(sale, currentGoalsSupplier, currentGoalsBrand)) {
+                            if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
+                                sumFat += sale.VLVENDA;
+                                sumVol += sale.TOTPESOLIQ;
+
+                                const d = parseDate(sale.DTPED);
+                                if (d) {
+                                    // Previous Month Calc
+                                    if (d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear) {
+                                        prevFat += sale.VLVENDA;
+                                        prevVol += sale.TOTPESOLIQ;
+                                    }
+
+                                    // Activity per Month Calc
