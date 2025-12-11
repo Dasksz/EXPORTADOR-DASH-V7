@@ -3273,7 +3273,7 @@
                  goalsMixFoodsAdjustments['PEPSICO_ALL'].forEach(val => mixFoodsAdjustment += val);
             }
 
-            const standardSaltyTarget = Math.round(adjustedMixBase * 0.60);
+            const standardSaltyTarget = Math.round(adjustedMixBase * 0.50);
             const standardFoodsTarget = Math.round(adjustedMixBase * 0.30);
 
             if(mixSaltyEl) mixSaltyEl.textContent = (standardSaltyTarget + mixSaltyAdjustment).toLocaleString('pt-BR');
@@ -3689,7 +3689,7 @@
             });
             
             // Apply 60% / 30% rule
-            const base = type === 'salty' ? Math.round(naturalCount * 0.60) : Math.round(naturalCount * 0.30);
+            const base = type === 'salty' ? Math.round(naturalCount * 0.50) : Math.round(naturalCount * 0.30);
             const adjustment = value - base;
             
             if (type === 'salty') {
@@ -4062,7 +4062,7 @@
                         }
                     });
                     
-                    const naturalSaltyTarget = Math.round(naturalMixBase * 0.60);
+                    const naturalSaltyTarget = Math.round(naturalMixBase * 0.50);
                     const naturalFoodsTarget = Math.round(naturalMixBase * 0.30);
                     
                     const handleMixCard = (type, naturalTarget, adjustmentsMap, inputId, btnId) => {
@@ -4536,7 +4536,7 @@
                         sumSalty += mSalty; sumFoods += mFoods;
                     });
 
-                    let mixSaltyMeta = Math.round(activeClientsCount * 0.60);
+                    let mixSaltyMeta = Math.round(activeClientsCount * 0.50);
                     let mixFoodsMeta = Math.round(activeClientsCount * 0.30);
                     if (sellerObj.code === '1001') { mixSaltyMeta = 0; mixFoodsMeta = 0; }
 
