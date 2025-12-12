@@ -1762,9 +1762,9 @@
         let globalGoalsMetrics = {};
         let globalGoalsTotalsCache = {};
         let globalClientGoals = new Map();
-        let goalsPosAdjustments = { 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map(), 'PEPSICO_ALL': new Map() }; // Map<CodCli, Map<Key, {fat: 0, vol: 0}>>
-        let goalsMixSaltyAdjustments = { 'PEPSICO_ALL': new Map() }; // Map<SellerName, adjustment>
-        let goalsMixFoodsAdjustments = { 'PEPSICO_ALL': new Map() }; // Map<SellerName, adjustment>
+        let goalsPosAdjustments = { 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map(), 'PEPSICO_ALL': new Map(), '707': new Map(), '708': new Map(), '752': new Map(), '1119_TODDYNHO': new Map(), '1119_TODDY': new Map(), '1119_QUAKER_KEROCOCO': new Map() }; // Map<CodCli, Map<Key, {fat: 0, vol: 0}>>
+        let goalsMixSaltyAdjustments = { 'PEPSICO_ALL': new Map(), 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map() }; // Map<SellerName, adjustment>
+        let goalsMixFoodsAdjustments = { 'PEPSICO_ALL': new Map(), 'ELMA_ALL': new Map(), 'FOODS_ALL': new Map() }; // Map<SellerName, adjustment>
         let quarterMonths = [];
 
         function identifyQuarterMonths() {
@@ -3099,7 +3099,7 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -3135,6 +3135,10 @@
                 }
             });
 
+            
+            const filteredSummaryClientCodes = new Set();
+            filteredSummaryClients.forEach(c => filteredSummaryClientCodes.add(c['Código']));
+
             const summaryItems = [
                 { title: 'Extrusados', supplier: '707', brand: null, color: 'teal' },
                 { title: 'Não Extrusados', supplier: '708', brand: null, color: 'blue' },
@@ -3157,6 +3161,15 @@
                 
                 const target = summaryGoalsSums[key] || { fat: 0, vol: 0 };
                 const metrics = displayMetrics[key] || { avgFat: 0, prevFat: 0 };
+                
+                let subCategoryAdjustment = 0;
+                if (goalsPosAdjustments[key]) {
+                    goalsPosAdjustments[key].forEach((adjVal, clientCode) => {
+                        if (filteredSummaryClientCodes.has(clientCode)) {
+                            subCategoryAdjustment += adjVal;
+                        }
+                    });
+                }
 
                 totalFat += target.fat;
                 totalVol += target.vol;
@@ -3213,7 +3226,7 @@
                                     <p class="text-xs text-slate-400 uppercase font-semibold">Meta Pos. (Clientes)</p>
                                 </div>
                                 <p class="text-xl font-bold ${textColor} mb-2">
-                                    ${(metrics.quarterlyPos || 0).toLocaleString('pt-BR')}
+                                    ${((metrics.quarterlyPos || 0) + subCategoryAdjustment).toLocaleString('pt-BR')}
                                 </p>
                                 <div class="flex justify-between text-[10px] text-slate-400 border-t border-slate-700/50 pt-1">
                                     <span>Ativos no Trimestre</span>
@@ -3261,40 +3274,19 @@
                 }
             });
             
-            // New: Calculate Base specifically for Salty (ELMA Active Clients)
-            const elmaKeys = ['707', '708', '752'];
-            const elmaClientsSet = new Set();
-            elmaKeys.forEach(k => {
-                if (displayMetrics[k] && displayMetrics[k].quarterlyPosClientsSet) {
-                    displayMetrics[k].quarterlyPosClientsSet.forEach(c => elmaClientsSet.add(c));
-                }
-            });
-            
-            let naturalSaltyBaseSummary = 0;
-            elmaClientsSet.forEach(clientCode => {
-                const client = clientMapForKPIs.get(String(clientCode));
-                if (client) {
-                     const rca1 = String(client.rca1 || '').trim();
-                     if (rca1 !== '1001') {
-                         naturalSaltyBaseSummary++;
-                     }
-                }
-            });
-
             const adjustedMixBase = naturalMixBaseCount + totalAdjustment;
 
             let mixSaltyAdjustment = 0;
-            if (goalsMixSaltyAdjustments['PEPSICO_ALL']) {
-                 goalsMixSaltyAdjustments['PEPSICO_ALL'].forEach(val => mixSaltyAdjustment += val);
+            if (goalsMixSaltyAdjustments[currentGoalsSupplier]) {
+                 goalsMixSaltyAdjustments[currentGoalsSupplier].forEach(val => mixSaltyAdjustment += val);
             }
 
             let mixFoodsAdjustment = 0;
-            if (goalsMixFoodsAdjustments['PEPSICO_ALL']) {
-                 goalsMixFoodsAdjustments['PEPSICO_ALL'].forEach(val => mixFoodsAdjustment += val);
+            if (goalsMixFoodsAdjustments[currentGoalsSupplier]) {
+                 goalsMixFoodsAdjustments[currentGoalsSupplier].forEach(val => mixFoodsAdjustment += val);
             }
 
-            // Mix Salty Target: 50% of Active ELMA Clients (Natural Base)
-            const standardSaltyTarget = Math.round(naturalSaltyBaseSummary * 0.50);
+            const standardSaltyTarget = Math.round(adjustedMixBase * 0.50);
             const standardFoodsTarget = Math.round(adjustedMixBase * 0.30);
 
             if(mixSaltyEl) mixSaltyEl.textContent = (standardSaltyTarget + mixSaltyAdjustment).toLocaleString('pt-BR');
@@ -3351,7 +3343,7 @@
                     const rca1 = String(c.rca1 || '').trim();
                     const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                     if (isAmericanas) return true;
-                    if (rca1 === '53' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                    if (rca1 === '53') return false;
                     return true;
                 });
 
@@ -3476,7 +3468,7 @@
                     }
                 }
 
-                const metaPos = sumFat > 1 ? 1 : 0; // Positivado se venda > 1 (threshold padrão)
+                const metaPos = (sumFat > 1 && avgFat > 0) ? 1 : 0; // Positivado se venda > 1 (threshold padrão)
 
                 clientMetrics.push({
                     cod: codCli,
@@ -3488,8 +3480,8 @@
                     prevVol: prevVol, // Now Kg (removed / 1000)
                     activeMonthsCount,
                     isActivePrevMonth,
-                    shareFat: globalTotalAvgFat > 0 ? (avgFat / globalTotalAvgFat) : 0,
-                    shareVol: globalTotalAvgVol > 0 ? (avgVol / globalTotalAvgVol) : 0,
+                    shareFat: (globalTotalAvgFat > 0 && avgFat > 0) ? (avgFat / globalTotalAvgFat) : 0,
+                    shareVol: (globalTotalAvgVol > 0 && avgVol > 0) ? (avgVol / globalTotalAvgVol) : 0,
                     metaFat: metaFat,
                     metaVol: metaVol,
                     metaPos: metaPos,
@@ -3704,7 +3696,7 @@
                         }
                     });
                 }
-                if (sumFat > 1) naturalCount++;
+                if (sumFat > 1 && (sumFat / 3) > 0) naturalCount++;
             });
             
             // Apply 60% / 30% rule
@@ -3712,11 +3704,11 @@
             const adjustment = value - base;
             
             if (type === 'salty') {
-                if (!goalsMixSaltyAdjustments['PEPSICO_ALL']) goalsMixSaltyAdjustments['PEPSICO_ALL'] = new Map();
-                goalsMixSaltyAdjustments['PEPSICO_ALL'].set(sellerName, adjustment);
+                if (!goalsMixSaltyAdjustments[currentGoalsSupplier]) goalsMixSaltyAdjustments[currentGoalsSupplier] = new Map();
+                goalsMixSaltyAdjustments[currentGoalsSupplier].set(sellerName, adjustment);
             } else {
-                if (!goalsMixFoodsAdjustments['PEPSICO_ALL']) goalsMixFoodsAdjustments['PEPSICO_ALL'] = new Map();
-                goalsMixFoodsAdjustments['PEPSICO_ALL'].set(sellerName, adjustment);
+                if (!goalsMixFoodsAdjustments[currentGoalsSupplier]) goalsMixFoodsAdjustments[currentGoalsSupplier] = new Map();
+                goalsMixFoodsAdjustments[currentGoalsSupplier].set(sellerName, adjustment);
             }
             
             updateGoalsView();
@@ -3887,9 +3879,6 @@
                 const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
 
                 let cSumFat = 0; let cSumVol = 0; let cPrevFat = 0; let cPrevVol = 0;
-                // Accumulators for sub-bases
-                let cElmaSumFat = 0;
-
                 const monthlyActivity = new Map();
                 const monthlyValues = {};
                 quarterMonths.forEach(m => monthlyValues[m.key] = 0);
@@ -3904,13 +3893,6 @@
                             if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
                                 cSumFat += sale.VLVENDA;
                                 cSumVol += sale.TOTPESOLIQ;
-                                
-                                // Calculate Sub-Bases totals
-                                const codFor = String(sale.CODFOR);
-                                if (['707', '708', '752'].includes(codFor)) {
-                                    cElmaSumFat += sale.VLVENDA;
-                                }
-
                                 const d = parseDate(sale.DTPED);
                                 if (d) {
                                     if (d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear) {
@@ -3956,16 +3938,15 @@
                     }
                 }
 
-                const metaPos = cSumFat > 1 ? 1 : 0;
-                const elmaPos = cElmaSumFat > 1 ? 1 : 0;
+                const metaPos = (cSumFat > 1 && avgFat > 0) ? 1 : 0;
 
                 const metric = {
                     cod: codCli, name: client.fantasia || client.razaoSocial, seller: sellerName,
                     avgFat, avgVol, prevFat: cPrevFat, prevVol: cPrevVol,
                     activeMonthsCount, isActivePrevMonth,
-                    shareFat: globalTotalAvgFat > 0 ? (avgFat / globalTotalAvgFat) : 0,
-                    shareVol: globalTotalAvgVol > 0 ? (avgVol / globalTotalAvgVol) : 0,
-                    metaFat, metaVol, metaPos, elmaPos, monthlyValues
+                    shareFat: (globalTotalAvgFat > 0 && avgFat > 0) ? (avgFat / globalTotalAvgFat) : 0,
+                    shareVol: (globalTotalAvgVol > 0 && avgVol > 0) ? (avgVol / globalTotalAvgVol) : 0,
+                    metaFat, metaVol, metaPos, monthlyValues
                 };
                 clientMetrics.push(metric);
 
@@ -4044,7 +4025,7 @@
                     const displayPos = naturalTotalPos + contextAdjustment;
                     newMixInput.value = displayPos.toLocaleString('pt-BR');
                     
-                    if (isAggregatedTab && isSingleSeller) {
+                    if (isSingleSeller) {
                         newMixInput.readOnly = false;
                         newMixInput.classList.remove('opacity-50', 'cursor-not-allowed');
                         
@@ -4053,18 +4034,49 @@
                             btnDistributeMix.parentNode.replaceChild(newBtnDistributeMix, btnDistributeMix);
                             newBtnDistributeMix.style.display = '';
                             
-                            newBtnDistributeMix.addEventListener('click', () => {
-                                const valStr = newMixInput.value;
-                                const filterDesc = getFilterDescription();
-                                showConfirmationModal(`Confirmar ajuste de Meta Positivação para ${valStr} (Cliente: ${filterDesc})?`, () => {
-                                    const val = parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0;
-                                    const newAdjustment = val - naturalTotalPos;
-                                    if (adjustmentMap) {
-                                        adjustmentMap.set(selectedGoalsGvSellers[0], newAdjustment);
-                                        updateGoalsView();
-                                    }
-                                });
+                            newBtnDistributeMix.onclick = () => {
+                            const valStr = newMixInput.value;
+                            const val = parseFloat(valStr.replace(/\./g, '').replace(',', '.')) || 0;
+                            const filterDesc = getFilterDescription();
+                            // Validation: Check against PEPSICO Limit
+                            const sellerName = selectedGoalsGvSellers[0];
+                            let pepsicoNaturalPos = 0;
+                            // Calculate Natural PEPSICO Positivação for this seller
+                            const len = allClientsData.length;
+                            for(let i=0; i<len; i++) {
+                                const c = allClientsData instanceof ColumnarDataset ? allClientsData.get(i) : allClientsData[i];
+                                
+                            const rca = c.rcas[0];
+                            const sName = optimizedData.rcaNameByCode.get(rca) || rca;
+                            if (sName === sellerName) {
+                            const historyIds = optimizedData.indices.history.byClient.get(c['Código']);
+                            if (historyIds) {
+                            for (let id of historyIds) {
+                            const sale = optimizedData.historyById.get(id);
+                            if ((sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') &&
+                            ['707','708','752','1119'].includes(String(sale.CODFOR))) {
+                            pepsicoNaturalPos++;
+                            break;
+                            }
+                            }
+                            }
+                            }
+                            
+                            }
+                const pepsicoAdj = goalsPosAdjustments['PEPSICO_ALL'].get(sellerName) || 0;
+                            const pepsicoLimit = pepsicoNaturalPos + pepsicoAdj;
+                            if (currentGoalsSupplier !== 'PEPSICO_ALL' && val > pepsicoLimit) {
+                            alert(`O valor não pode ultrapassar a Meta de Positivação PEPSICO definida (${pepsicoLimit.toLocaleString('pt-BR')}).\n(Natural: ${pepsicoNaturalPos}, Ajuste PEPSICO: ${pepsicoAdj})`);
+                            return;
+                            }
+                            showConfirmationModal(`Confirmar ajuste de Meta Positivação para ${valStr} (Cliente: ${filterDesc})?`, () => {
+                            const newAdjustment = val - naturalTotalPos;
+                            if (adjustmentMap) {
+                            adjustmentMap.set(selectedGoalsGvSellers[0], newAdjustment);
+                            updateGoalsView();
+                            }
                             });
+                            };
                         }
                     } else {
                         newMixInput.readOnly = true;
@@ -4077,45 +4089,22 @@
                 const cardMixSalty = document.getElementById('card-mix-salty');
                 const cardMixFoods = document.getElementById('card-mix-foods');
                 
-                if (currentGoalsSupplier === 'PEPSICO_ALL') {
+                if (currentGoalsSupplier === 'PEPSICO_ALL' || currentGoalsSupplier === 'ELMA_ALL' || currentGoalsSupplier === 'FOODS_ALL') {
                     if(cardMixSalty) cardMixSalty.classList.remove('hidden');
                     if(cardMixFoods) cardMixFoods.classList.remove('hidden');
                     
                     // Logic to populate values and handle edit
                     let naturalMixBase = 0;
-                    let naturalSaltyBase = 0;
-                    const visibleSellers = new Set();
-                    
                     clientMetrics.forEach(c => {
-                        visibleSellers.add(c.seller);
-                        // Check if not seller 1001 (Americanas) using robust client map lookup
-                        const client = clientMapForKPIs.get(String(c.cod));
-                        const rca1 = client ? String(client.rca1 || '').trim() : '';
-
-                        if (rca1 !== '1001') {
+                        // Check if not seller 1001 (Americanas)
+                        const sellerCode = optimizedData.rcaCodeByName.get(c.seller) || '';
+                        if (sellerCode !== '1001') {
                             if (c.metaPos > 0) naturalMixBase++; // Count positivations in PEPSICO_ALL (Total Pos)
-                            if (c.elmaPos > 0) naturalSaltyBase++; // Count positivations in ELMA (Salty Base)
                         }
                     });
-
-                    // Incorporate Positivação Adjustments to Base
-                    let totalPosAdjustment = 0;
-                    if (goalsPosAdjustments['PEPSICO_ALL']) {
-                        goalsPosAdjustments['PEPSICO_ALL'].forEach((val, sellerName) => {
-                            if (visibleSellers.has(sellerName)) {
-                                totalPosAdjustment += val;
-                            }
-                        });
-                    }
-                    const adjustedMixBase = naturalMixBase + totalPosAdjustment;
                     
-                    // Mix Salty Target: 50% of Active ELMA Clients (Natural Base)
-                    // Note: User requested specifically "50% of META POSITIVAÇÃO of ELMA sub-tab"
-                    const naturalSaltyTarget = Math.round(naturalSaltyBase * 0.50);
-                    
-                    // Mix Foods Target: Kept as 30% of Total Pepsico Base (Consistent with previous logic unless changed)
-                    // If user wants it to be Foods base, we would need foodsPos. Sticking to current behavior for Foods as instructed.
-                    const naturalFoodsTarget = Math.round(adjustedMixBase * 0.30);
+                    const naturalSaltyTarget = Math.round(naturalMixBase * 0.50);
+                    const naturalFoodsTarget = Math.round(naturalMixBase * 0.30);
                     
                     const handleMixCard = (type, naturalTarget, adjustmentsMap, inputId, btnId) => {
                         let adj = 0;
@@ -4147,11 +4136,11 @@
                         }
                     };
                     
-                    if (goalsMixSaltyAdjustments['PEPSICO_ALL']) {
-                        handleMixCard('Salty', naturalSaltyTarget, goalsMixSaltyAdjustments['PEPSICO_ALL'], 'goal-global-mix-salty', 'btn-distribute-mix-salty');
+                    if (goalsMixSaltyAdjustments[currentGoalsSupplier]) {
+                        handleMixCard('Salty', naturalSaltyTarget, goalsMixSaltyAdjustments[currentGoalsSupplier], 'goal-global-mix-salty', 'btn-distribute-mix-salty');
                     }
-                    if (goalsMixFoodsAdjustments['PEPSICO_ALL']) {
-                        handleMixCard('Foods', naturalFoodsTarget, goalsMixFoodsAdjustments['PEPSICO_ALL'], 'goal-global-mix-foods', 'btn-distribute-mix-foods');
+                    if (goalsMixFoodsAdjustments[currentGoalsSupplier]) {
+                        handleMixCard('Foods', naturalFoodsTarget, goalsMixFoodsAdjustments[currentGoalsSupplier], 'goal-global-mix-foods', 'btn-distribute-mix-foods');
                     }
 
                 } else {
@@ -4215,7 +4204,7 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -4608,7 +4597,73 @@
                 });
 
                 // Group Supervisors
-                const supervisorGroups = new Map();
+                
+                // --- APPLY ADJUSTMENTS TO SELLERS ---
+                sellerMap.forEach(seller => {
+                    const sellerName = seller.name;
+                    
+                    // 1. Positivation Adjustments
+                    // Map Column ID -> Adjustment Key
+                    // IDs: 'total_elma'->'ELMA_ALL', 'total_foods'->'FOODS_ALL', 'geral'->'PEPSICO_ALL'
+                    //      '707'->'707', etc.
+                    
+                    const posKeys = {
+                        'total_elma': 'ELMA_ALL',
+                        'total_foods': 'FOODS_ALL',
+                        'geral': 'PEPSICO_ALL', // GERAL uses PEPSICO_ALL for Positivação
+                        '707': '707', '708': '708', '752': '752',
+                        '1119_TODDYNHO': '1119_TODDY', // Wait, map keys? 
+                        '1119_TODDY': '1119_TODDY', // Check keys in globalGoalsMetrics
+                        '1119_QUAKER_KEROCOCO': '1119_QUAKER_KEROCOCO'
+                    };
+                    
+                    // Specific Fix for Toddynho Key mismatch if any (1119_TODDYNHO vs 1119_TODDYNHO)
+                    // My previous code used '1119_TODDYNHO'.
+                    posKeys['1119_TODDYNHO'] = '1119_TODDYNHO'; 
+
+                    for (const [colId, data] of Object.entries(seller.data)) {
+                        // Apply Pos Adjustment
+                        const adjKey = posKeys[colId] || colId; // Fallback to ID
+                        if (goalsPosAdjustments[adjKey]) {
+                            const adj = goalsPosAdjustments[adjKey].get(sellerName) || 0;
+                            // Update Meta Pos: Natural (Summed from clients) + Adjustment
+                            // Note: 'data.metaPos' currently holds Natural Count from client loop.
+                            data.metaPos = data.metaPos + adj;
+                        }
+                        
+                        // Apply Mix Adjustment (Only for Mix Cols)
+                        if (colId === 'mix_salty') {
+                            const adj = goalsMixSaltyAdjustments['PEPSICO_ALL']?.get(sellerName) || 0;
+                            // metaMix was calculated as Math.round(active * 0.5).
+                            data.metaMix = data.metaMix + adj;
+                        }
+                        if (colId === 'mix_foods') {
+                            const adj = goalsMixFoodsAdjustments['PEPSICO_ALL']?.get(sellerName) || 0;
+                            data.metaMix = data.metaMix + adj;
+                        }
+                        
+                        // Apply Pedev Adjustment? (Calculated as 90% of Total Elma)
+                        // This is calculated LATER in the supervisor loop?
+                        // "sellerObj.data['pedev'] = { metaPos: Math.round(totalElma.metaPos * 0.9) };"
+                        // This line exists inside the client loop (aggregating).
+                        // Since we just updated total_elma.metaPos, we should re-calculate pedev here.
+                    }
+                    
+                    // Re-calculate PEDEV based on updated TOTAL ELMA
+                    if (seller.data['total_elma'] && seller.data['pedev']) {
+                         seller.data['pedev'].metaPos = Math.round(seller.data['total_elma'].metaPos * 0.9);
+                    }
+                    
+                    // Re-calculate GERAL based on updated components?
+                    // GERAL components: total_elma, total_foods.
+                    // "sellerObj.data['geral'] = { ... metaPos: activeClientsCount }"
+                    // The 'activeClientsCount' in the loop was based on (Total Fat > 1).
+                    // This is 'PEPSICO NATURAL'.
+                    // So 'geral' key maps to PEPSICO_ALL adjustment.
+                    // Handled above via posKeys['geral'] = 'PEPSICO_ALL'.
+                });
+    
+const supervisorGroups = new Map();
                 sellerMap.forEach(seller => {
                     const supName = seller.supervisor;
                     if (!supervisorGroups.has(supName)) supervisorGroups.set(supName, { name: supName, id: supName.replace(/[^a-zA-Z0-9]/g, '_'), code: optimizedData.supervisorCodeByName.get(supName) || '', sellers: [], totals: {} });
