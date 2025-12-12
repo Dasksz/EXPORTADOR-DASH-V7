@@ -3127,8 +3127,8 @@
                 '1119_QUAKER_KEROCOCO': { fat: 0, vol: 0 }
             };
 
-            // Calculate Base Total for Mix (Use PEPSICO_ALL metric)
-            const basePosCount = (displayMetrics['PEPSICO_ALL'] && displayMetrics['PEPSICO_ALL'].quarterlyPos) ? displayMetrics['PEPSICO_ALL'].quarterlyPos : uniquePosClientsSet.size;
+            // Calculate Base Total for Mix (Use ELMA_ALL metric with exclusion)
+            const elmaTargetBase = getElmaTargetBase(displayMetrics, goalsPosAdjustments, activeSellersInSummary);
 
             filteredSummaryClients.forEach(c => {
                 const codCli = c['Código'];
@@ -3294,8 +3294,8 @@
                 }
             });
             
-            // MIX KPIs - STRICTLY PEPSICO_ALL SOURCE & LOGIC
-            const naturalSaltyTarget = Math.round(basePosCount * 0.60);
+            // MIX KPIs - Based on ELMA Target (50% Salty / 30% Foods)
+            const naturalSaltyTarget = Math.round(elmaTargetBase * 0.50);
 
             let mixSaltyAdjustment = 0;
             if (goalsMixSaltyAdjustments['PEPSICO_ALL']) {
@@ -3306,8 +3306,8 @@
             }
             if(mixSaltyEl) mixSaltyEl.textContent = (naturalSaltyTarget + mixSaltyAdjustment).toLocaleString('pt-BR');
 
-            // Mix Foods
-            const naturalFoodsTarget = Math.round(basePosCount * 0.30);
+            // Mix Foods - Based on ELMA Target (30%)
+            const naturalFoodsTarget = Math.round(elmaTargetBase * 0.30);
             let mixFoodsAdjustment = 0;
             if (goalsMixFoodsAdjustments['PEPSICO_ALL']) {
                  goalsMixFoodsAdjustments['PEPSICO_ALL'].forEach((val, sellerName) => {
@@ -3315,6 +3315,44 @@
                  });
             }
             if(mixFoodsEl) mixFoodsEl.textContent = (naturalFoodsTarget + mixFoodsAdjustment).toLocaleString('pt-BR');
+        }
+
+        function getElmaTargetBase(displayMetrics, goalsPosAdjustments, activeSellersSet) {
+            // 1. Natural Base (Historical Positive Clients)
+            let naturalCount = 0;
+            const elmaMetrics = displayMetrics['ELMA_ALL'];
+
+            if (elmaMetrics && elmaMetrics.quarterlyPosClientsSet) {
+                elmaMetrics.quarterlyPosClientsSet.forEach(codCli => {
+                    const client = clientMapForKPIs.get(String(codCli));
+                    if (client) {
+                        // Check if Americanas
+                        const rca1 = String(client.rca1 || '').trim();
+                        const isAmericanas = (client.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+                        // Exclude Americanas (RCA 1001) from the base
+                        if (rca1 !== '1001' && !isAmericanas) {
+                            naturalCount++;
+                        }
+                    }
+                });
+            }
+
+            // 2. Adjustments (Meta Pos)
+            let adjustment = 0;
+            const elmaAdj = goalsPosAdjustments['ELMA_ALL'];
+            if (elmaAdj) {
+                elmaAdj.forEach((val, sellerName) => {
+                    // Check if seller is in current view (activeSellersSet)
+                    // AND not Americanas (Name check as adjustments are keyed by name)
+                    const isAmericanasSeller = sellerName.toUpperCase().includes('AMERICANAS');
+
+                    if ((!activeSellersSet || activeSellersSet.has(sellerName)) && !isAmericanasSeller) {
+                        adjustment += val;
+                    }
+                });
+            }
+
+            return naturalCount + adjustment;
         }
 
                 function calculateDistributedGoals(filteredClients, currentGoalsSupplier, currentGoalsBrand, goalFat, goalVol) {
@@ -3683,27 +3721,25 @@
         }
 
         function saveMixAdjustment(type, value, sellerName) {
-            // Find natural base for this seller
-            // We can iterate the 'filteredClients' from 'updateGoalsView' context if we had it, or re-filter.
-            // Since we are in a helper, we re-filter for safety and accuracy.
+            // Find natural base for this seller based on ELMA metrics (excluding Americanas)
+            const sellerCode = optimizedData.rcaCodeByName.get(sellerName);
             
             // Re-use logic for Active Clients counting
-            const sellerCode = optimizedData.rcaCodeByName.get(sellerName);
-
             const sellerClients = allClientsData.filter(c => {
                 const rca1 = String(c.rca1 || '').trim();
                 if (!sellerCode) return false;
                 
                 // Is client active check (Same as others)
+                // Exclude Americanas explicitly from this calculation as per requirement
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
-                if (!isAmericanas && (rca1 === '53' || rca1 === '053' || rca1 === '' || rca1 === 'INATIVOS')) return false;
+                if (isAmericanas || (rca1 === '53' || rca1 === '053' || rca1 === '' || rca1 === 'INATIVOS')) return false;
                 
                 // Does client belong to seller? (Current Hierarchy)
                 return c.rcas.includes(sellerCode);
             });
             
             let naturalCount = 0;
-            // Count "Meta Pos" (Revenue > 1 in PEPSICO_ALL) for these clients
+            // Count "Meta Pos" (Revenue > 1 in ELMA_ALL: 707, 708, 752) for these clients
             sellerClients.forEach(c => {
                 const codCli = c['Código'];
                 const hIds = optimizedData.indices.history.byClient.get(codCli);
@@ -3711,7 +3747,7 @@
                 if (hIds) {
                     hIds.forEach(id => {
                         const s = optimizedData.historyById.get(id);
-                        if (['707', '708', '752', '1119'].includes(String(s.CODFOR))) {
+                        if (['707', '708', '752'].includes(String(s.CODFOR))) {
                             if (s.TIPOVENDA === '1' || s.TIPOVENDA === '9') sumFat += s.VLVENDA;
                         }
                     });
@@ -3719,8 +3755,17 @@
                 if (sumFat > 1) naturalCount++;
             });
             
-            // Apply 60% / 30% rule
-            const base = type === 'salty' ? Math.round(naturalCount * 0.60) : Math.round(naturalCount * 0.30);
+            // Check if seller has specific adjustment for ELMA_ALL (Meta Pos)
+            let adjustmentPos = 0;
+            if (goalsPosAdjustments['ELMA_ALL'] && goalsPosAdjustments['ELMA_ALL'].has(sellerName)) {
+                adjustmentPos = goalsPosAdjustments['ELMA_ALL'].get(sellerName);
+            }
+
+            // Base = Natural Elma Count + Elma Adjustment
+            const totalElmaBase = naturalCount + adjustmentPos;
+
+            // Apply 50% / 30% rule
+            const base = type === 'salty' ? Math.round(totalElmaBase * 0.50) : Math.round(totalElmaBase * 0.30);
             const adjustment = value - base;
             
             // ALWAYS STORE IN PEPSICO_ALL (Unify Inputs)
@@ -4161,12 +4206,15 @@
                     };
                     
                     // FORCE READ FROM PEPSICO_ALL KEY for Mix Cards
-                    // Calculate Natural Base using PEPSICO metrics for consistency in card display
-                    const pepsicoMetrics = displayMetrics['PEPSICO_ALL'] || { quarterlyPos: 0 };
+                    // Calculate Natural Base using ELMA metrics (excluding Americanas) for consistency
 
-                    // Card Natural Targets (Global for the view)
-                    const globalNaturalSalty = Math.round(pepsicoMetrics.quarterlyPos * 0.60);
-                    const globalNaturalFoods = Math.round(pepsicoMetrics.quarterlyPos * 0.30);
+                    // Determine visible sellers set for filtering adjustments in helper
+                    const visibleSellersSet = new Set(clientMetrics.map(c => c.seller));
+                    const elmaTargetBase = getElmaTargetBase(displayMetrics, goalsPosAdjustments, visibleSellersSet);
+
+                    // Card Natural Targets (Based on ELMA: 50% Salty / 30% Foods)
+                    const globalNaturalSalty = Math.round(elmaTargetBase * 0.50);
+                    const globalNaturalFoods = Math.round(elmaTargetBase * 0.30);
 
                     if (goalsMixSaltyAdjustments['PEPSICO_ALL']) {
                         handleMixCard('Salty', globalNaturalSalty, goalsMixSaltyAdjustments['PEPSICO_ALL'], 'goal-global-mix-salty', 'btn-distribute-mix-salty');
