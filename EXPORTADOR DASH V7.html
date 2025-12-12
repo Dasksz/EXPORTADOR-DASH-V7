@@ -2957,6 +2957,8 @@
                 '1119_TODDYNHO': createMetric(),
                 '1119_TODDY': createMetric(),
                 '1119_QUAKER_KEROCOCO': createMetric(),
+                'ELMA_ALL': createMetric(),
+                'FOODS_ALL': createMetric(),
                 'PEPSICO_ALL': createMetric()
             };
 
@@ -3068,6 +3070,35 @@
                     });
                 }
             });
+
+            // Helper for aggregation (copied from calculateGoalsMetrics)
+            const aggregateToAll = (targetKey, sourceKeys) => {
+                const target = metricsMap[targetKey];
+                sourceKeys.forEach(key => {
+                    const source = metricsMap[key];
+                    if (!source) return;
+
+                    target.fat += source.fat;
+                    target.vol += source.vol;
+                    target.prevFat += source.prevFat;
+                    target.prevVol += source.prevVol;
+
+                    source.prevClientsSet.forEach(c => target.prevClientsSet.add(c));
+                    source.quarterlyPosClientsSet.forEach(c => target.quarterlyPosClientsSet.add(c));
+
+                    source.monthlyClientsSets.forEach((set, monthKey) => {
+                        if (!target.monthlyClientsSets.has(monthKey)) {
+                            target.monthlyClientsSets.set(monthKey, new Set());
+                        }
+                        const targetSet = target.monthlyClientsSets.get(monthKey);
+                        set.forEach(c => targetSet.add(c));
+                    });
+                });
+            };
+
+            aggregateToAll('ELMA_ALL', ['707', '708', '752']);
+            aggregateToAll('FOODS_ALL', ['1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO']);
+            aggregateToAll('PEPSICO_ALL', ['707', '708', '752', '1119_TODDYNHO', '1119_TODDY', '1119_QUAKER_KEROCOCO']);
 
             // Calculate Averages and Finalize
             for (const key in metricsMap) {
