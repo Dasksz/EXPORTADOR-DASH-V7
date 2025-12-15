@@ -438,8 +438,8 @@
                 // (Isso substitui o vendedor original da venda, pois a carteira está 'sem dono')
                 if (!isAmericanas && (!clientInfo || !clientInfo.rca1 || clientInfo.rca1.trim() === '')) {
                     vendorName = 'INATIVOS';
-                    supervisorName = 'BALCAO'; // Força o supervisor para BALCAO conforme solicitado
-                    codSupervisor = '8'; // Garante que o código do supervisor seja 8 (Padrão Balcão)
+                    supervisorName = 'INATIVOS'; // Alterado de BALCAO para INATIVOS
+                    codSupervisor = '99'; // Alterado de 8 para 99 para separar do Balcão
                 }
                 // --- FIM DA MODIFICAÇÃO ---
 
@@ -1833,8 +1833,9 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS (Empty RCA1)
                 if (rca1 === '53') return false;
+                if (rca1 === '') return false; // Exclude INATIVOS
                 return true;
             });
 
@@ -2912,8 +2913,9 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
                 if (rca1 === '53') return false;
+                if (rca1 === '') return false; // Exclude INATIVOS
                 return true;
             });
 
@@ -2982,8 +2984,9 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
                 if (rca1 === '53') return false;
+                if (rca1 === '') return false; // Exclude INATIVOS
                 return true;
             });
 
@@ -3145,8 +3148,9 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
                 if (rca1 === '53') return false;
+                if (rca1 === '') return false; // Exclude INATIVOS
                 return true;
             });
 
@@ -3447,8 +3451,9 @@
                     const rca1 = String(c.rca1 || '').trim();
                     const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                     if (isAmericanas) return true;
-                    // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
                     if (rca1 === '53') return false;
+                if (rca1 === '') return false; // Exclude INATIVOS
                     return true;
                 });
 
@@ -4327,8 +4332,9 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
                 if (rca1 === '53') return false;
+                if (rca1 === '') return false; // Exclude INATIVOS
                 return true;
             });
 
