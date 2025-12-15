@@ -1226,15 +1226,26 @@
 
         function initializeOptimizedDataStructures() {
             const sellerDetailsMap = new Map();
+            const sellerLastSaleDateMap = new Map(); // Track latest date per seller
             const clientToCurrentSellerMap = new Map();
             let americanasCodCli = null;
 
-            // Combined loop for seller details map
-            const combinedData = [...allSalesData, ...allHistoryData];
-            for (let i = 0; i < combinedData.length; i++) {
-                const s = combinedData[i];
-                if (s.CODUSUR && (!sellerDetailsMap.has(s.CODUSUR) || s.NOME)) {
-                    sellerDetailsMap.set(s.CODUSUR, { name: s.NOME, supervisor: s.SUPERV });
+            // Use ONLY History Data for identifying Supervisor (User Request)
+            // Identify Supervisor for each Seller based on the *Latest* sale in History
+            const historyData = allHistoryData; // Using variable for clarity
+            for (let i = 0; i < historyData.length; i++) {
+                const s = historyData instanceof ColumnarDataset ? historyData.get(i) : historyData[i];
+                const codUsur = s.CODUSUR;
+                // Ignorar 'INATIVOS' e 'AMERICANAS' para evitar poluição do mapa de supervisores com lógica de fallback
+                if (codUsur && s.NOME !== 'INATIVOS' && s.NOME !== 'AMERICANAS') {
+                    const dt = parseDate(s.DTPED);
+                    const ts = dt ? dt.getTime() : 0;
+                    const lastTs = sellerLastSaleDateMap.get(codUsur) || 0;
+                    
+                    if (ts >= lastTs || !sellerDetailsMap.has(codUsur)) {
+                        sellerLastSaleDateMap.set(codUsur, ts);
+                        sellerDetailsMap.set(codUsur, { name: s.NOME, supervisor: s.SUPERV });
+                    }
                 }
             }
 
@@ -1254,10 +1265,8 @@
                     client.rca1 = '1001';
                     client.rcas = ['1001'];
                     americanasCodCli = codCli;
-                } else if (!client.rca1 || String(client.rca1).trim() === '') {
-                    client.rca1 = 'INATIVOS';
-                    client.rcas = ['INATIVOS'];
-                }
+                } 
+                // Removed INATIVOS logic as per request
                 
                 if (client.rca1) clientToCurrentSellerMap.set(codCli, String(client.rca1));
                 clientRamoMap.set(codCli, client.ramo || 'N/A');
@@ -1824,8 +1833,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude RCA 53 (Balcão) variants and Empty/Inativos
-                if (rca1 === '53' || rca1 === '053' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -2903,7 +2912,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -2972,7 +2982,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                if (rca1 === '53' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -3134,8 +3145,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude RCA 53 (Balcão) variants and Empty/Inativos
-                if (rca1 === '53' || rca1 === '053' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -3436,6 +3447,7 @@
                     const rca1 = String(c.rca1 || '').trim();
                     const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                     if (isAmericanas) return true;
+                    // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
                     if (rca1 === '53') return false;
                     return true;
                 });
@@ -4315,8 +4327,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude RCA 53 (Balcão) variants and Empty/Inativos
-                if (rca1 === '53' || rca1 === '053' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -4653,7 +4665,12 @@
                         // Check if active (Total Fat > 1 in history)
                         const hIds = optimizedData.indices.history.byClient.get(c['Código']);
                         let totalFat = 0;
-                        if(hIds) { for (const id of hIds) totalFat += optimizedData.historyById.get(id).VLVENDA; }
+                        if(hIds) { 
+                            for (const id of hIds) {
+                                const s = optimizedData.historyById.get(id);
+                                if (s.TIPOVENDA === '1' || s.TIPOVENDA === '9') totalFat += s.VLVENDA; 
+                            }
+                        }
                         if (totalFat > 1) activeClientsCount++;
                     });
 
@@ -4663,6 +4680,7 @@
                     const monthlyData = new Map();
                     historyIds.forEach(id => {
                         const sale = optimizedData.historyById.get(id);
+                        if (sale.TIPOVENDA !== '1' && sale.TIPOVENDA !== '9') return; // Strict Type Check
                         const d = parseDate(sale.DTPED);
                         if (!d) return;
                         const mKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
@@ -4689,8 +4707,14 @@
                         sumSalty += mSalty; sumFoods += mFoods;
                     });
 
-                    let mixSaltyMeta = Math.round(activeClientsCount * 0.50);
-                    let mixFoodsMeta = Math.round(activeClientsCount * 0.30);
+                    // Calculate Mix Targets using PEPSICO Base (Natural + Adjustment) to match GV 'PEPSICO' Logic
+                    const pepsicoAdjForMix = goalsPosAdjustments['PEPSICO_ALL'] ? (goalsPosAdjustments['PEPSICO_ALL'].get(sellerObj.name) || 0) : 0;
+                    // 'activeClientsCount' is the Natural Pepsico Active count (clients with >0 revenue)
+                    const pepsicoBaseForMix = activeClientsCount + pepsicoAdjForMix;
+
+                    let mixSaltyMeta = Math.round(pepsicoBaseForMix * 0.50);
+                    let mixFoodsMeta = Math.round(pepsicoBaseForMix * 0.30);
+                    
                     if (sellerObj.code === '1001') { mixSaltyMeta = 0; mixFoodsMeta = 0; }
 
                     sellerObj.data['mix_salty'] = { avgMix: sumSalty / divisor, metaMix: mixSaltyMeta };
@@ -4699,12 +4723,17 @@
                     // Geral & Pedev
                     const totalElma = sellerObj.data['total_elma'];
                     const totalFoods = sellerObj.data['total_foods'];
+                    
+                    // Note: 'activeClientsCount' here is the Pepsico Natural Active Count. 
+                    // The 'geral' column will receive the 'PEPSICO_ALL' adjustment in the loop below.
+                    
                     sellerObj.data['geral'] = {
                         avgFat: (totalElma.avgFat || 0) + (totalFoods.avgFat || 0),
                         metaFat: totalElma.metaFat + totalFoods.metaFat,
                         metaVol: totalElma.metaVol + totalFoods.metaVol,
-                        metaPos: activeClientsCount
+                        metaPos: activeClientsCount 
                     };
+                    // Pedev uses Total Elma (Natural). We'll update it after adjustment loop to be safe.
                     sellerObj.data['pedev'] = { metaPos: Math.round(totalElma.metaPos * 0.9) };
                 });
 
@@ -4796,7 +4825,91 @@ const supervisorGroups = new Map();
                             }
                         });
                     });
+
+                    // Recalculate Mix Targets for Supervisor using Group Aggregates to match Global Logic
+                    // 1. Calculate Group Natural Base (Sum of sellers' natural bases)
+                    // Note: 'metaPos' in 'geral' is the Natural PEPSICO Base (unique clients per seller)
+                    // Must exclude Americanas (Code 1001) from Base Calculation
+                    let groupPepsicoNatural = 0;
+                    group.sellers.forEach(seller => {
+                        if (seller.code !== '1001') {
+                            groupPepsicoNatural += (seller.data['geral'] ? seller.data['geral'].metaPos : 0);
+                        }
+                    });
+                    
+                    // 2. Calculate Group Adjustments
+                    let groupPepsicoAdj = 0;
+                    if (goalsPosAdjustments['PEPSICO_ALL']) {
+                        group.sellers.forEach(seller => {
+                            groupPepsicoAdj += (goalsPosAdjustments['PEPSICO_ALL'].get(seller.name) || 0);
+                        });
+                    }
+                    
+                    const groupPepsicoBase = groupPepsicoNatural + groupPepsicoAdj;
+
+                    // 3. Calculate Mix Targets
+                    let groupMixSaltyMeta = Math.round(groupPepsicoBase * 0.50);
+                    let groupMixFoodsMeta = Math.round(groupPepsicoBase * 0.30);
+
+                    // 4. Add Mix Adjustments
+                    let groupMixSaltyAdj = 0;
+                    let groupMixFoodsAdj = 0;
+                    if (goalsMixSaltyAdjustments['PEPSICO_ALL']) {
+                        group.sellers.forEach(seller => groupMixSaltyAdj += (goalsMixSaltyAdjustments['PEPSICO_ALL'].get(seller.name) || 0));
+                    }
+                    if (goalsMixFoodsAdjustments['PEPSICO_ALL']) {
+                        group.sellers.forEach(seller => groupMixFoodsAdj += (goalsMixFoodsAdjustments['PEPSICO_ALL'].get(seller.name) || 0));
+                    }
+
+                    // Override summed totals with recalculated totals
+                    if (group.totals['mix_salty']) group.totals['mix_salty'].metaMix = groupMixSaltyMeta + groupMixSaltyAdj;
+                    if (group.totals['mix_foods']) group.totals['mix_foods'].metaMix = groupMixFoodsMeta + groupMixFoodsAdj;
                 });
+                
+                // Recalculate Grand Total (Geral PRIME) using Global Aggregates
+                // We can sum the recalculated Group totals which are now consistent, or redo Global.
+                // Let's redo Global to be absolutely sure "A = B".
+                const grandTotalRow = { totals: {} };
+                svColumns.forEach(col => grandTotalRow.totals[col.id] = { metaFat: 0, metaVol: 0, metaPos: 0, avgVol: 0, avgMix: 0, metaMix: 0, avgFat: 0 });
+                
+                // Sum standard metrics from groups
+                supervisorGroups.forEach(group => {
+                    svColumns.forEach(col => {
+                        const s = group.totals[col.id]; const t = grandTotalRow.totals[col.id];
+                        t.metaFat += s.metaFat; t.metaVol += s.metaVol; t.metaPos += s.metaPos;
+                        t.avgVol += s.avgVol; t.avgMix += s.avgMix; t.avgFat += s.avgFat;
+                        // Don't sum metaMix yet
+                    });
+                });
+
+                // Recalculate Grand Total Mix
+                // Calculate Global Natural Base excluding Americanas (using GERAL/PEPSICO base)
+                let globalPepsicoNatural = 0;
+                sellerMap.forEach(seller => {
+                    if (seller.code !== '1001') {
+                        globalPepsicoNatural += (seller.data['geral'] ? seller.data['geral'].metaPos : 0);
+                    }
+                });
+
+                let globalPepsicoAdj = 0;
+                let globalMixSaltyAdj = 0;
+                let globalMixFoodsAdj = 0;
+                
+                // Iterate ALL sellers to get total adjustments
+                sellerMap.forEach(seller => {
+                    globalPepsicoAdj += (goalsPosAdjustments['PEPSICO_ALL'] ? (goalsPosAdjustments['PEPSICO_ALL'].get(seller.name) || 0) : 0);
+                    globalMixSaltyAdj += (goalsMixSaltyAdjustments['PEPSICO_ALL'] ? (goalsMixSaltyAdjustments['PEPSICO_ALL'].get(seller.name) || 0) : 0);
+                    globalMixFoodsAdj += (goalsMixFoodsAdjustments['PEPSICO_ALL'] ? (goalsMixFoodsAdjustments['PEPSICO_ALL'].get(seller.name) || 0) : 0);
+                });
+                
+                const globalPepsicoBase = globalPepsicoNatural + globalPepsicoAdj;
+                grandTotalRow.totals['mix_salty'].metaMix = Math.round(globalPepsicoBase * 0.50) + globalMixSaltyAdj;
+                grandTotalRow.totals['mix_foods'].metaMix = Math.round(globalPepsicoBase * 0.30) + globalMixFoodsAdj;
+                
+                // We inject this fake Grand Total row logic into the sortedSupervisors array or handle it in rendering?
+                // The rendering logic likely expects sortedSupervisors to contain only supervisors.
+                // The "Geral PRIME" row is usually rendered separately in the footer.
+                // Let's check the rendering loop below. 
 
                 const sortedSupervisors = Array.from(supervisorGroups.values()).sort((a, b) => (b.totals['total_elma']?.metaFat || 0) - (a.totals['total_elma']?.metaFat || 0));
                 currentGoalsSvData = sortedSupervisors;
@@ -4884,14 +4997,23 @@ const supervisorGroups = new Map();
                 // Grand Total
                 bodyHTML += `<tr class="bg-[#0f172a] font-bold text-white border-t-2 border-slate-500 sticky bottom-0 z-20"><td class="px-2 py-3 text-center uppercase tracking-wider">GV</td><td class="px-2 py-3 text-left uppercase tracking-wider">Geral PRIME</td>`;
                 svColumns.forEach(col => {
-                    const d = grandTotals[col.id];
+                    // Use recalculated grandTotalRow.totals instead of summed grandTotals
+                    const d = grandTotalRow.totals[col.id] || { metaFat: 0, metaVol: 0, metaPos: 0, avgVol: 0, avgMix: 0, metaMix: 0, avgFat: 0 };
+                    // Fallback to monthlyValues from original summation if needed (recalculation didn't handle it, but it's not critical for Meta Mix/Pos)
+                    // Actually, let's use grandTotals for monthly/avgs and grandTotalRow for Metas if recalculated.
+                    const dOrig = grandTotals[col.id];
+                    const monthlyVals = dOrig ? dOrig.monthlyValues : {};
+                    const avgFat = dOrig ? dOrig.avgFat : 0;
+                    const avgVol = dOrig ? dOrig.avgVol : 0;
+                    const avgMix = dOrig ? dOrig.avgMix : 0;
+
                     if (col.type === 'standard') {
-                        quarterMonths.forEach(m => bodyHTML += `<td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700 text-[10px] bg-blue-900/5">${(d.monthlyValues[m.key] || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`);
-                        bodyHTML += `<td class="px-1 py-2 text-right text-teal-400 border-r border-slate-700 bg-blue-900/10">${d.avgFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-teal-400 border-r border-slate-700">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-teal-600/70 border-r border-slate-700" id="total-grand-${col.id}-fat">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-center text-purple-400 border-r border-slate-700">${d.metaPos}</td><td class="px-1 py-2 text-center text-purple-600/70 border-r border-slate-700" id="total-grand-${col.id}-pos">${d.metaPos}</td>`;
-                    } else if (col.type === 'tonnage') bodyHTML += `<td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700">${d.avgVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-orange-400 border-r border-slate-700">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-orange-600/70 border-r border-slate-700" id="total-grand-${col.id}-vol">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
-                    else if (col.type === 'mix') bodyHTML += `<td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700">${d.avgMix.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1})}</td><td class="px-1 py-2 text-right text-cyan-400 border-r border-slate-700">${d.metaMix}</td><td class="px-1 py-2 text-right text-cyan-600/70 border-r border-slate-700" id="total-grand-${col.id}-mix">${d.metaMix}</td>`;
-                    else if (col.type === 'geral') bodyHTML += `<td class="px-1 py-2 text-right text-slate-500 border-r border-slate-700">${d.avgFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-white border-r border-slate-700" id="total-grand-geral-fat">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-white border-r border-slate-700" id="total-grand-geral-ton">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-center text-white border-r border-slate-700" id="total-grand-geral-pos">${d.metaPos}</td>`;
-                    else if (col.type === 'pedev') bodyHTML += `<td class="px-1 py-2 text-center text-pink-400 border-r border-slate-700" id="total-grand-pedev-pos">${Math.round(grandTotals['total_elma']?.metaPos * 0.9)}</td>`;
+                        quarterMonths.forEach(m => bodyHTML += `<td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700 text-[10px] bg-blue-900/5">${(monthlyVals[m.key] || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`);
+                        bodyHTML += `<td class="px-1 py-2 text-right text-teal-400 border-r border-slate-700 bg-blue-900/10">${avgFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-teal-400 border-r border-slate-700">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-teal-600/70 border-r border-slate-700" id="total-grand-${col.id}-fat">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-center text-purple-400 border-r border-slate-700">${d.metaPos}</td><td class="px-1 py-2 text-center text-purple-600/70 border-r border-slate-700" id="total-grand-${col.id}-pos">${d.metaPos}</td>`;
+                    } else if (col.type === 'tonnage') bodyHTML += `<td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700">${avgVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-orange-400 border-r border-slate-700">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-orange-600/70 border-r border-slate-700" id="total-grand-${col.id}-vol">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+                    else if (col.type === 'mix') bodyHTML += `<td class="px-1 py-2 text-right text-slate-400 border-r border-slate-700">${avgMix.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1})}</td><td class="px-1 py-2 text-right text-cyan-400 border-r border-slate-700">${d.metaMix}</td><td class="px-1 py-2 text-right text-cyan-600/70 border-r border-slate-700" id="total-grand-${col.id}-mix">${d.metaMix}</td>`;
+                    else if (col.type === 'geral') bodyHTML += `<td class="px-1 py-2 text-right text-slate-500 border-r border-slate-700">${avgFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-white border-r border-slate-700" id="total-grand-geral-fat">${d.metaFat.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-right text-white border-r border-slate-700" id="total-grand-geral-ton">${d.metaVol.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="px-1 py-2 text-center text-white border-r border-slate-700" id="total-grand-geral-pos">${d.metaPos}</td>`;
+                    else if (col.type === 'pedev') bodyHTML += `<td class="px-1 py-2 text-center text-pink-400 border-r border-slate-700" id="total-grand-pedev-pos">${Math.round(grandTotalRow.totals['total_elma']?.metaPos * 0.9)}</td>`;
                 });
                 bodyHTML += `</tr></tbody>`;
                 mainTable.innerHTML = headerHTML + bodyHTML;
