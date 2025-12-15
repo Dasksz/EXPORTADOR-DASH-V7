@@ -4707,15 +4707,13 @@
                         sumSalty += mSalty; sumFoods += mFoods;
                     });
 
-                    // Calculate Mix Targets using ELMA Base (Natural + Adjustment) to match GV logic
-                    // We need to fetch the adjustment here because Mix calculation happens before the main adjustment loop
-                    const elmaAdjForMix = goalsPosAdjustments['ELMA_ALL'] ? (goalsPosAdjustments['ELMA_ALL'].get(sellerObj.name) || 0) : 0;
-                    // FIX: Ensure elmaPos is used (it is populated in the async loop). Fallback to 0 if undefined.
-                    const naturalElmaPos = sellerObj.elmaPos || 0;
-                    const elmaBaseForMix = naturalElmaPos + elmaAdjForMix;
+                    // Calculate Mix Targets using PEPSICO Base (Natural + Adjustment) to match GV 'PEPSICO' Logic
+                    const pepsicoAdjForMix = goalsPosAdjustments['PEPSICO_ALL'] ? (goalsPosAdjustments['PEPSICO_ALL'].get(sellerObj.name) || 0) : 0;
+                    // 'activeClientsCount' is the Natural Pepsico Active count (clients with >0 revenue)
+                    const pepsicoBaseForMix = activeClientsCount + pepsicoAdjForMix;
 
-                    let mixSaltyMeta = Math.round(elmaBaseForMix * 0.50);
-                    let mixFoodsMeta = Math.round(elmaBaseForMix * 0.30);
+                    let mixSaltyMeta = Math.round(pepsicoBaseForMix * 0.50);
+                    let mixFoodsMeta = Math.round(pepsicoBaseForMix * 0.30);
 
                     if (sellerObj.code === '1001') { mixSaltyMeta = 0; mixFoodsMeta = 0; }
 
@@ -4830,28 +4828,28 @@ const supervisorGroups = new Map();
 
                     // Recalculate Mix Targets for Supervisor using Group Aggregates to match Global Logic
                     // 1. Calculate Group Natural Base (Sum of sellers' natural bases)
-                    // Note: 'metaPos' in 'total_elma' is the Natural Elma Base (unique clients per seller)
+                    // Note: 'metaPos' in 'geral' is the Natural PEPSICO Base (unique clients per seller)
                     // Must exclude Americanas (Code 1001) from Base Calculation
-                    let groupElmaNatural = 0;
+                    let groupPepsicoNatural = 0;
                     group.sellers.forEach(seller => {
                         if (seller.code !== '1001') {
-                            groupElmaNatural += (seller.data['total_elma'] ? seller.data['total_elma'].metaPos : 0);
+                            groupPepsicoNatural += (seller.data['geral'] ? seller.data['geral'].metaPos : 0);
                         }
                     });
 
                     // 2. Calculate Group Adjustments
-                    let groupElmaAdj = 0;
-                    if (goalsPosAdjustments['ELMA_ALL']) {
+                    let groupPepsicoAdj = 0;
+                    if (goalsPosAdjustments['PEPSICO_ALL']) {
                         group.sellers.forEach(seller => {
-                            groupElmaAdj += (goalsPosAdjustments['ELMA_ALL'].get(seller.name) || 0);
+                            groupPepsicoAdj += (goalsPosAdjustments['PEPSICO_ALL'].get(seller.name) || 0);
                         });
                     }
 
-                    const groupElmaBase = groupElmaNatural + groupElmaAdj;
+                    const groupPepsicoBase = groupPepsicoNatural + groupPepsicoAdj;
 
                     // 3. Calculate Mix Targets
-                    let groupMixSaltyMeta = Math.round(groupElmaBase * 0.50);
-                    let groupMixFoodsMeta = Math.round(groupElmaBase * 0.30);
+                    let groupMixSaltyMeta = Math.round(groupPepsicoBase * 0.50);
+                    let groupMixFoodsMeta = Math.round(groupPepsicoBase * 0.30);
 
                     // 4. Add Mix Adjustments
                     let groupMixSaltyAdj = 0;
@@ -4885,28 +4883,28 @@ const supervisorGroups = new Map();
                 });
 
                 // Recalculate Grand Total Mix
-                // Calculate Global Natural Base excluding Americanas
-                let globalElmaNatural = 0;
+                // Calculate Global Natural Base excluding Americanas (using GERAL/PEPSICO base)
+                let globalPepsicoNatural = 0;
                 sellerMap.forEach(seller => {
                     if (seller.code !== '1001') {
-                        globalElmaNatural += (seller.data['total_elma'] ? seller.data['total_elma'].metaPos : 0);
+                        globalPepsicoNatural += (seller.data['geral'] ? seller.data['geral'].metaPos : 0);
                     }
                 });
 
-                let globalElmaAdj = 0;
+                let globalPepsicoAdj = 0;
                 let globalMixSaltyAdj = 0;
                 let globalMixFoodsAdj = 0;
 
                 // Iterate ALL sellers to get total adjustments
                 sellerMap.forEach(seller => {
-                    globalElmaAdj += (goalsPosAdjustments['ELMA_ALL'] ? (goalsPosAdjustments['ELMA_ALL'].get(seller.name) || 0) : 0);
+                    globalPepsicoAdj += (goalsPosAdjustments['PEPSICO_ALL'] ? (goalsPosAdjustments['PEPSICO_ALL'].get(seller.name) || 0) : 0);
                     globalMixSaltyAdj += (goalsMixSaltyAdjustments['PEPSICO_ALL'] ? (goalsMixSaltyAdjustments['PEPSICO_ALL'].get(seller.name) || 0) : 0);
                     globalMixFoodsAdj += (goalsMixFoodsAdjustments['PEPSICO_ALL'] ? (goalsMixFoodsAdjustments['PEPSICO_ALL'].get(seller.name) || 0) : 0);
                 });
 
-                const globalElmaBase = globalElmaNatural + globalElmaAdj;
-                grandTotalRow.totals['mix_salty'].metaMix = Math.round(globalElmaBase * 0.50) + globalMixSaltyAdj;
-                grandTotalRow.totals['mix_foods'].metaMix = Math.round(globalElmaBase * 0.30) + globalMixFoodsAdj;
+                const globalPepsicoBase = globalPepsicoNatural + globalPepsicoAdj;
+                grandTotalRow.totals['mix_salty'].metaMix = Math.round(globalPepsicoBase * 0.50) + globalMixSaltyAdj;
+                grandTotalRow.totals['mix_foods'].metaMix = Math.round(globalPepsicoBase * 0.30) + globalMixFoodsAdj;
 
                 // We inject this fake Grand Total row logic into the sortedSupervisors array or handle it in rendering?
                 // The rendering logic likely expects sortedSupervisors to contain only supervisors.
