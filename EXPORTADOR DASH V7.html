@@ -1236,7 +1236,8 @@
             for (let i = 0; i < historyData.length; i++) {
                 const s = historyData instanceof ColumnarDataset ? historyData.get(i) : historyData[i];
                 const codUsur = s.CODUSUR;
-                if (codUsur) {
+                // Ignorar 'INATIVOS' e 'AMERICANAS' para evitar poluição do mapa de supervisores com lógica de fallback
+                if (codUsur && s.NOME !== 'INATIVOS' && s.NOME !== 'AMERICANAS') {
                     const dt = parseDate(s.DTPED);
                     const ts = dt ? dt.getTime() : 0;
                     const lastTs = sellerLastSaleDateMap.get(codUsur) || 0;
@@ -1832,8 +1833,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão) variants
-                if (rca1 === '53' || rca1 === '053') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -2911,8 +2912,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão) variants
-                if (rca1 === '53' || rca1 === '053') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -2981,8 +2982,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude RCA 53 (Balcão) variants and Empty/Inativos
-                if (rca1 === '53' || rca1 === '053' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -3144,8 +3145,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude RCA 53 (Balcão) variants and Empty/Inativos
-                if (rca1 === '53' || rca1 === '053' || rca1 === '' || rca1 === 'INATIVOS') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -3446,8 +3447,8 @@
                     const rca1 = String(c.rca1 || '').trim();
                     const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                     if (isAmericanas) return true;
-                    // STRICT FILTER: Exclude ONLY RCA 53 (Balcão) variants
-                    if (rca1 === '53' || rca1 === '053') return false;
+                    // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                    if (rca1 === '53') return false;
                     return true;
                 });
 
@@ -4326,8 +4327,8 @@
                 const rca1 = String(c.rca1 || '').trim();
                 const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
                 if (isAmericanas) return true;
-                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão) variants
-                if (rca1 === '53' || rca1 === '053') return false;
+                // STRICT FILTER: Exclude ONLY RCA 53 (Balcão)
+                if (rca1 === '53') return false;
                 return true;
             });
 
@@ -4709,7 +4710,9 @@
                     // Calculate Mix Targets using ELMA Base (Natural + Adjustment) to match GV logic
                     // We need to fetch the adjustment here because Mix calculation happens before the main adjustment loop
                     const elmaAdjForMix = goalsPosAdjustments['ELMA_ALL'] ? (goalsPosAdjustments['ELMA_ALL'].get(sellerObj.name) || 0) : 0;
-                    const elmaBaseForMix = (sellerObj.elmaPos || 0) + elmaAdjForMix;
+                    // FIX: Ensure elmaPos is used (it is populated in the async loop). Fallback to 0 if undefined.
+                    const naturalElmaPos = sellerObj.elmaPos || 0;
+                    const elmaBaseForMix = naturalElmaPos + elmaAdjForMix;
 
                     let mixSaltyMeta = Math.round(elmaBaseForMix * 0.50);
                     let mixFoodsMeta = Math.round(elmaBaseForMix * 0.30);
@@ -4828,7 +4831,13 @@ const supervisorGroups = new Map();
                     // Recalculate Mix Targets for Supervisor using Group Aggregates to match Global Logic
                     // 1. Calculate Group Natural Base (Sum of sellers' natural bases)
                     // Note: 'metaPos' in 'total_elma' is the Natural Elma Base (unique clients per seller)
-                    let groupElmaNatural = group.totals['total_elma'] ? group.totals['total_elma'].metaPos : 0;
+                    // Must exclude Americanas (Code 1001) from Base Calculation
+                    let groupElmaNatural = 0;
+                    group.sellers.forEach(seller => {
+                        if (seller.code !== '1001') {
+                            groupElmaNatural += (seller.data['total_elma'] ? seller.data['total_elma'].metaPos : 0);
+                        }
+                    });
 
                     // 2. Calculate Group Adjustments
                     let groupElmaAdj = 0;
@@ -4876,7 +4885,14 @@ const supervisorGroups = new Map();
                 });
 
                 // Recalculate Grand Total Mix
-                let globalElmaNatural = grandTotalRow.totals['total_elma'].metaPos;
+                // Calculate Global Natural Base excluding Americanas
+                let globalElmaNatural = 0;
+                sellerMap.forEach(seller => {
+                    if (seller.code !== '1001') {
+                        globalElmaNatural += (seller.data['total_elma'] ? seller.data['total_elma'].metaPos : 0);
+                    }
+                });
+
                 let globalElmaAdj = 0;
                 let globalMixSaltyAdj = 0;
                 let globalMixFoodsAdj = 0;
