@@ -3375,6 +3375,21 @@
                         // Check if Americanas
                         const rca1 = String(client.rca1 || '').trim();
                         const isAmericanas = (client.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+
+                        // Resolve Seller Name to check against activeSellersSet
+                        let sellerName = 'N/A';
+                        const rcaCode = (client.rcas && client.rcas.length > 0) ? client.rcas[0] : '';
+                        if (rcaCode) {
+                            sellerName = optimizedData.rcaNameByCode.get(rcaCode) || rcaCode;
+                        } else {
+                            sellerName = 'INATIVOS';
+                        }
+
+                        // Filter: If activeSellersSet is provided, client MUST belong to one of them
+                        if (activeSellersSet && activeSellersSet.size > 0 && !activeSellersSet.has(sellerName)) {
+                            return;
+                        }
+
                         // Exclude Americanas (RCA 1001) from the base
                         if (rca1 !== '1001' && !isAmericanas) {
                             naturalCount++;
