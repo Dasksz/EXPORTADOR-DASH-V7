@@ -3028,6 +3028,9 @@
 
                         const keysToProcess = [];
                         if (key && metricsMap[key]) keysToProcess.push(key);
+
+                        if (['707', '708', '752'].includes(codFor)) keysToProcess.push('ELMA_ALL');
+                        if (codFor === '1119') keysToProcess.push('FOODS_ALL');
                         if (['707', '708', '752', '1119'].includes(codFor)) keysToProcess.push('PEPSICO_ALL');
 
                         keysToProcess.forEach(procKey => {
