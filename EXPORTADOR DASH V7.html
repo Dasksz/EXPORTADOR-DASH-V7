@@ -2901,6 +2901,16 @@
             XLSX.writeFile(wb, "Metas_Fechamento_SV.xlsx");
         }
 
+        function isActiveClient(c) {
+            const rca1 = String(c.rca1 || '').trim();
+            const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
+            if (isAmericanas) return true;
+            // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
+            if (rca1 === '53') return false;
+            if (rca1 === '') return false; // Exclude INATIVOS
+            return true;
+        }
+
         function getGoalsFilteredData() {
             const sellersSet = new Set(selectedGoalsGvSellers);
             const supervisorsSet = new Set(selectedGoalsGvSupervisors);
@@ -2909,15 +2919,7 @@
             let clients = allClientsData;
 
             // Apply "Active" Filter logic
-            clients = clients.filter(c => {
-                const rca1 = String(c.rca1 || '').trim();
-                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
-                if (isAmericanas) return true;
-                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
-                if (rca1 === '53') return false;
-                if (rca1 === '') return false; // Exclude INATIVOS
-                return true;
-            });
+            clients = clients.filter(c => isActiveClient(c));
 
             // Filter by Supervisor
             if (supervisorsSet.size > 0) {
@@ -2980,15 +2982,7 @@
             const prevMonthYear = prevMonthDate.getUTCFullYear();
 
             // Filter clients to match the "Active Structure" definition (Same as Coverage/Goals Table)
-            let activeClients = allClientsData.filter(c => {
-                const rca1 = String(c.rca1 || '').trim();
-                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
-                if (isAmericanas) return true;
-                // STRICT FILTER: Exclude RCA 53 (Balcão) and INATIVOS
-                if (rca1 === '53') return false;
-                if (rca1 === '') return false; // Exclude INATIVOS
-                return true;
-            });
+            let activeClients = allClientsData.filter(c => isActiveClient(c));
 
             // Filter by Supervisors if provided
             if (supervisorsList && supervisorsList.length > 0) {
@@ -4103,7 +4097,7 @@
                     }
                 }
 
-                const metaPos = (cSumFat > 1 && avgFat > 0) ? 1 : 0;
+                const metaPos = cSumFat > 1 ? 1 : 0;
 
                 const metric = {
                     cod: codCli, name: client.fantasia || client.razaoSocial, seller: sellerName,
