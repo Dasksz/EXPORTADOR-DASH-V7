@@ -1103,6 +1103,10 @@
                 return this._source.get(index);
             }
 
+            getIndex(key) {
+                return this._indices.get(key);
+            }
+
             has(key) {
                 return this._indices.has(key);
             }
@@ -1935,6 +1939,10 @@
                 return true;
             });
 
+            // Optimization: Detect if history is columnar and IndexMap is available
+            const isHistoryColumnar = optimizedData.historyById instanceof IndexMap && optimizedData.historyById._source.values;
+            const historyValues = isHistoryColumnar ? optimizedData.historyById._source.values : null;
+
             activeClients.forEach(client => {
                 const codCli = client['Código'];
                 const clientHistoryIds = optimizedData.indices.history.byClient.get(codCli);
@@ -1943,59 +1951,125 @@
                 const clientTotals = {}; // key -> { prevFat: 0, monthlyFat: Map<MonthKey, val> }
 
                 if (clientHistoryIds) {
-                    clientHistoryIds.forEach(id => {
-                        const sale = optimizedData.historyById.get(id);
-                        // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Summary Metrics
-                        if (String(codCli).trim() === '9569' && (String(sale.CODUSUR).trim() === '53' || String(sale.CODUSUR).trim() === '053')) return;
-                        
-                        let key = null;
-                        const codFor = String(sale.CODFOR);
-                        
-                        if (codFor === '707') key = '707';
-                        else if (codFor === '708') key = '708';
-                        else if (codFor === '752') key = '752';
-                        else if (codFor === '1119') {
-                            const desc = normalize(sale.DESCRICAO || '');
-                            if (desc.includes('TODDYNHO')) key = '1119_TODDYNHO';
-                            else if (desc.includes('TODDY')) key = '1119_TODDY';
-                            else if (desc.includes('QUAKER') || desc.includes('KEROCOCO')) key = '1119_QUAKER_KEROCOCO';
-                        }
+                    if (isHistoryColumnar) {
+                        // Optimized Path: Use indices
+                        clientHistoryIds.forEach(id => {
+                            const idx = optimizedData.historyById.getIndex(id);
+                            if (idx === undefined) return;
 
-                        if (key && globalGoalsMetrics[key]) {
-                            const d = parseDate(sale.DTPED);
-                            const isPrevMonth = d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear;
+                            const codUsur = historyValues['CODUSUR'][idx];
+                             // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Summary Metrics
+                            if (String(codCli).trim() === '9569' && (String(codUsur).trim() === '53' || String(codUsur).trim() === '053')) return;
+                            
+                            let key = null;
+                            const codFor = String(historyValues['CODFOR'][idx]);
+                            
+                            if (codFor === '707') key = '707';
+                            else if (codFor === '708') key = '708';
+                            else if (codFor === '752') key = '752';
+                            else if (codFor === '1119') {
+                                const desc = normalize(historyValues['DESCRICAO'][idx] || '');
+                                if (desc.includes('TODDYNHO')) key = '1119_TODDYNHO';
+                                else if (desc.includes('TODDY')) key = '1119_TODDY';
+                                else if (desc.includes('QUAKER') || desc.includes('KEROCOCO')) key = '1119_QUAKER_KEROCOCO';
+                            }
 
-                            // 1. Revenue/Volume metrics (Types 1 & 9) - Global Sums
-                            if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
-                                globalGoalsMetrics[key].fat += sale.VLVENDA;
-                                globalGoalsMetrics[key].vol += sale.TOTPESOLIQ;
+                            if (key && globalGoalsMetrics[key]) {
+                                const dtPed = historyValues['DTPED'][idx];
+                                const d = typeof dtPed === 'number' ? new Date(dtPed) : parseDate(dtPed);
+                                const isPrevMonth = d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear;
 
-                                if (isPrevMonth) {
-                                    globalGoalsMetrics[key].prevFat += sale.VLVENDA;
-                                    globalGoalsMetrics[key].prevVol += sale.TOTPESOLIQ;
+                                // 1. Revenue/Volume metrics (Types 1 & 9) - Global Sums
+                                const tipoVenda = historyValues['TIPOVENDA'][idx];
+                                if (tipoVenda === '1' || tipoVenda === '9') {
+                                    const vlVenda = Number(historyValues['VLVENDA'][idx]) || 0;
+                                    const totPeso = Number(historyValues['TOTPESOLIQ'][idx]) || 0;
+
+                                    globalGoalsMetrics[key].fat += vlVenda;
+                                    globalGoalsMetrics[key].vol += totPeso;
+
+                                    if (isPrevMonth) {
+                                        globalGoalsMetrics[key].prevFat += vlVenda;
+                                        globalGoalsMetrics[key].prevVol += totPeso;
+                                        
+                                        // Initialize Client Goal with Prev Month Value
+                                        if (!globalClientGoals.has(codCli)) globalClientGoals.set(codCli, new Map());
+                                        const cGoals = globalClientGoals.get(codCli);
+                                        if (!cGoals.has(key)) cGoals.set(key, { fat: 0, vol: 0 });
+                                        const g = cGoals.get(key);
+                                        g.fat += vlVenda;
+                                        g.vol += totPeso; // Kg
+                                    }
+
+                                    // 2. Accumulate for Client Count Check (Balance per period)
+                                    if (d) {
+                                    if (!clientTotals[key]) clientTotals[key] = { prevFat: 0, monthlyFat: new Map() };
                                     
-                                    // Initialize Client Goal with Prev Month Value
-                                    if (!globalClientGoals.has(codCli)) globalClientGoals.set(codCli, new Map());
-                                    const cGoals = globalClientGoals.get(codCli);
-                                    if (!cGoals.has(key)) cGoals.set(key, { fat: 0, vol: 0 });
-                                    const g = cGoals.get(key);
-                                    g.fat += sale.VLVENDA;
-                                    g.vol += sale.TOTPESOLIQ; // Kg
-                                }
-
-                                // 2. Accumulate for Client Count Check (Balance per period)
-                                if (d) {
-                                if (!clientTotals[key]) clientTotals[key] = { prevFat: 0, monthlyFat: new Map() };
-                                
-                                if (isPrevMonth) clientTotals[key].prevFat += sale.VLVENDA;
-                                
-                                const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
-                                const currentMVal = clientTotals[key].monthlyFat.get(monthKey) || 0;
-                                clientTotals[key].monthlyFat.set(monthKey, currentMVal + sale.VLVENDA);
+                                    if (isPrevMonth) clientTotals[key].prevFat += vlVenda;
+                                    
+                                    const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+                                    const currentMVal = clientTotals[key].monthlyFat.get(monthKey) || 0;
+                                    clientTotals[key].monthlyFat.set(monthKey, currentMVal + vlVenda);
+                                    }
                                 }
                             }
-                        }
-                    });
+                        });
+                    } else {
+                        // Fallback: Original Logic
+                        clientHistoryIds.forEach(id => {
+                            const sale = optimizedData.historyById.get(id);
+                            // EXCEPTION: Exclude Balcão (53) sales for Client 9569 from Summary Metrics
+                            if (String(codCli).trim() === '9569' && (String(sale.CODUSUR).trim() === '53' || String(sale.CODUSUR).trim() === '053')) return;
+                            
+                            let key = null;
+                            const codFor = String(sale.CODFOR);
+                            
+                            if (codFor === '707') key = '707';
+                            else if (codFor === '708') key = '708';
+                            else if (codFor === '752') key = '752';
+                            else if (codFor === '1119') {
+                                const desc = normalize(sale.DESCRICAO || '');
+                                if (desc.includes('TODDYNHO')) key = '1119_TODDYNHO';
+                                else if (desc.includes('TODDY')) key = '1119_TODDY';
+                                else if (desc.includes('QUAKER') || desc.includes('KEROCOCO')) key = '1119_QUAKER_KEROCOCO';
+                            }
+
+                            if (key && globalGoalsMetrics[key]) {
+                                const d = parseDate(sale.DTPED);
+                                const isPrevMonth = d && d.getUTCMonth() === prevMonthIndex && d.getUTCFullYear() === prevMonthYear;
+
+                                // 1. Revenue/Volume metrics (Types 1 & 9) - Global Sums
+                                if (sale.TIPOVENDA === '1' || sale.TIPOVENDA === '9') {
+                                    globalGoalsMetrics[key].fat += sale.VLVENDA;
+                                    globalGoalsMetrics[key].vol += sale.TOTPESOLIQ;
+
+                                    if (isPrevMonth) {
+                                        globalGoalsMetrics[key].prevFat += sale.VLVENDA;
+                                        globalGoalsMetrics[key].prevVol += sale.TOTPESOLIQ;
+                                        
+                                        // Initialize Client Goal with Prev Month Value
+                                        if (!globalClientGoals.has(codCli)) globalClientGoals.set(codCli, new Map());
+                                        const cGoals = globalClientGoals.get(codCli);
+                                        if (!cGoals.has(key)) cGoals.set(key, { fat: 0, vol: 0 });
+                                        const g = cGoals.get(key);
+                                        g.fat += sale.VLVENDA;
+                                        g.vol += sale.TOTPESOLIQ; // Kg
+                                    }
+
+                                    // 2. Accumulate for Client Count Check (Balance per period)
+                                    if (d) {
+                                    if (!clientTotals[key]) clientTotals[key] = { prevFat: 0, monthlyFat: new Map() };
+                                    
+                                    if (isPrevMonth) clientTotals[key].prevFat += sale.VLVENDA;
+                                    
+                                    const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+                                    const currentMVal = clientTotals[key].monthlyFat.get(monthKey) || 0;
+                                    clientTotals[key].monthlyFat.set(monthKey, currentMVal + sale.VLVENDA);
+                                    }
+                                }
+                            }
+                        });
+                    }
                 }
 
                 // Check thresholds for this client
