@@ -246,7 +246,15 @@
             const formats = columnFormats[fileType];
             if (!requiredColumns) return;
 
-            const headers = Object.keys(data[0]);
+            // Scan first 50 rows to detect available columns (headers)
+            // because the first row might be a partial "stock line" lacking some columns.
+            const headersSet = new Set();
+            const scanLimit = Math.min(data.length, 50);
+            for (let i = 0; i < scanLimit; i++) {
+                Object.keys(data[i]).forEach(k => headersSet.add(k));
+            }
+            const headers = Array.from(headersSet);
+
             const missingColumns = requiredColumns.filter(col => !headers.includes(col));
 
             if (missingColumns.length > 0) {
@@ -1382,6 +1390,29 @@
             
             processDatasetForIndices(allSalesData, optimizedData.indices.current, optimizedData.salesById, false);
             processDatasetForIndices(allHistoryData, optimizedData.indices.history, optimizedData.historyById, true);
+
+            // --- POPULATE MISSING PASTA FOR UNSOLD PRODUCTS ---
+            // Build a map of CODFOR -> PASTA using sold products
+            const codforToPastaMap = new Map();
+            optimizedData.productPastaMap.forEach((pasta, productCode) => {
+                const details = productDetailsMap.get(productCode);
+                if (details && details.codfor) {
+                    if (!codforToPastaMap.has(details.codfor)) {
+                        codforToPastaMap.set(details.codfor, pasta);
+                    }
+                }
+            });
+
+            // Backfill Pasta for products that have no sales (and thus no entry in productPastaMap yet)
+            productDetailsMap.forEach((details, productCode) => {
+                if (!optimizedData.productPastaMap.has(productCode) && details.codfor) {
+                    const inferredPasta = codforToPastaMap.get(details.codfor);
+                    if (inferredPasta) {
+                        optimizedData.productPastaMap.set(productCode, inferredPasta);
+                    }
+                }
+            });
+            // --- END BACKFILL ---
             
             supervisorToRcaMap.forEach((rcas, supervisor) => {
                 optimizedData.rcasBySupervisor.set(supervisor, Array.from(rcas));
