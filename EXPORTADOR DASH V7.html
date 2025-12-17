@@ -293,7 +293,7 @@
                                 // EXCEÇÃO: Linhas de Estoque (com Produto mas sem Vendedor) podem ter datas inválidas/zeros. Ignorar.
                                 const codUsurCheck = String(row['CODUSUR'] || '').trim();
                                 const prodCheck = String(row['PRODUTO'] || '').trim();
-                                if (codUsurCheck === '' && prodCheck !== '') {
+                                if ((codUsurCheck === '' || codUsurCheck === '0' || codUsurCheck === '00') && prodCheck !== '') {
                                     continue;
                                 }
                                 throw new Error(`Erro no arquivo '${fileName}', linha ${i + 2}. A coluna '${col}' contém um valor inválido: '${value}'. O formato esperado é '${format}'.`);
@@ -377,7 +377,7 @@
                 const codUsurCheck = String(rawRow['CODUSUR'] || '').trim();
 
                 // Se existe produto mas não tem vendedor, é uma linha apenas de estoque (inserida artificialmente)
-                if (productCheck !== '' && codUsurCheck === '') {
+                if (productCheck !== '' && (codUsurCheck === '' || codUsurCheck === '0' || codUsurCheck === '00')) {
                     if (stockLinesCollector) {
                         // Captura as informações da linha para uso posterior (ex: enriquecer cadastro de produtos)
                         // Substitui a data (que pode estar bugada/zerada) pela data mais recente válida (fallbackDate)
@@ -562,7 +562,8 @@
             for (let i = 0; i < data.length; i++) {
                 const row = data[i];
                 // Ignore rows without CODUSUR (Stock lines) to find the TRUE max sales date
-                if (!row['CODUSUR']) continue;
+                const codUsur = String(row['CODUSUR'] || '').trim();
+                if (codUsur === '' || codUsur === '0' || codUsur === '00') continue;
 
                 const d = parseDate(row['DTPED']);
                 if (d) {
