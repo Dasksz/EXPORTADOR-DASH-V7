@@ -290,6 +290,12 @@
                             }
 
                             if (!isValid) {
+                                // EXCEÇÃO: Linhas de Estoque (com Produto mas sem Vendedor) podem ter datas inválidas/zeros. Ignorar.
+                                const codUsurCheck = String(row['CODUSUR'] || '').trim();
+                                const prodCheck = String(row['PRODUTO'] || '').trim();
+                                if (codUsurCheck === '' && prodCheck !== '') {
+                                    continue;
+                                }
                                 throw new Error(`Erro no arquivo '${fileName}', linha ${i + 2}. A coluna '${col}' contém um valor inválido: '${value}'. O formato esperado é '${format}'.`);
                             }
                         }
@@ -364,14 +370,27 @@
             });
         };
 
-        const processSalesData = (rawData, clientMap, productMasterMap, newRcaSupervisorMap) => {
+        const processSalesData = (rawData, clientMap, productMasterMap, newRcaSupervisorMap, stockLinesCollector = null, fallbackDate = null) => {
             return rawData.map(rawRow => {
-                // --- INÍCIO DA MODIFICAÇÃO: FILTRO DE LINHAS DE ESTOQUE (SEM VENDEDOR) ---
+                // --- INÍCIO DA MODIFICAÇÃO: FILTRO E CAPTURA DE LINHAS DE ESTOQUE (SEM VENDEDOR) ---
                 const productCheck = String(rawRow['PRODUTO'] || '').trim();
                 const codUsurCheck = String(rawRow['CODUSUR'] || '').trim();
+
                 // Se existe produto mas não tem vendedor, é uma linha apenas de estoque (inserida artificialmente)
                 if (productCheck !== '' && codUsurCheck === '') {
-                    return null;
+                    if (stockLinesCollector) {
+                        // Captura as informações da linha para uso posterior (ex: enriquecer cadastro de produtos)
+                        // Substitui a data (que pode estar bugada/zerada) pela data mais recente válida (fallbackDate)
+                        stockLinesCollector.push({
+                            PRODUTO: productCheck,
+                            DESCRICAO: String(rawRow['DESCRICAO'] || ''),
+                            FORNECEDOR: String(rawRow['FORNECEDOR'] || ''),
+                            CODFOR: String(rawRow['CODFOR'] || ''),
+                            ESTOQUECX: parseBrazilianNumber(rawRow['ESTOQUECX']),
+                            DTPED: fallbackDate // Data sanitizada
+                        });
+                    }
+                    return null; // Remove da listagem principal de vendas
                 }
                 // --- FIM DA MODIFICAÇÃO ---
 
@@ -537,6 +556,22 @@
                 };
             }).filter(item => item !== null);
         };
+
+        function getMaxDate(data) {
+            let maxTs = 0;
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+                // Ignore rows without CODUSUR (Stock lines) to find the TRUE max sales date
+                if (!row['CODUSUR']) continue;
+
+                const d = parseDate(row['DTPED']);
+                if (d) {
+                    const ts = d.getTime();
+                    if (ts > maxTs) maxTs = ts;
+                }
+            }
+            return maxTs > 0 ? maxTs : Date.now();
+        }
 
         function getPassedWorkingDaysInSpecificMonth(year, month, today) {
             let count = 0;
@@ -708,8 +743,33 @@
                 });
 
                 self.postMessage({ type: 'progress', status: 'Cruzando dados de vendas...', percentage: 70 });
-                const processedSalesData = processSalesData(salesDataRaw, clientMap, productMasterMap, newRcaSupervisorMap);
-                const processedHistoryData = processSalesData(historyDataRaw, clientMap, productMasterMap, newRcaSupervisorMap);
+
+                // Calculate Max Date from Raw Sales Data (ignoring stock lines)
+                const maxSalesDate = getMaxDate(salesDataRaw);
+                const stockLinesCollector = [];
+
+                // Pass collector and maxDate to processSalesData
+                const processedSalesData = processSalesData(salesDataRaw, clientMap, productMasterMap, newRcaSupervisorMap, stockLinesCollector, maxSalesDate);
+                // History data usually doesn't have stock lines, but passing null/null is safe or consistent
+                const processedHistoryData = processSalesData(historyDataRaw, clientMap, productMasterMap, newRcaSupervisorMap, null, null);
+
+                // Update productMasterMap / productDetailsMap with info from stockLines (if missing)
+                // This ensures "Lost Products" table has Description/Supplier even if product is not in the Products File
+                stockLinesCollector.forEach(item => {
+                    const code = item.PRODUTO;
+                    // Note: productMasterMap stores qtdeMaster. We probably don't have that in stock lines,
+                    // but we have Description/Supplier which goes into productDetailsMap (used for display).
+
+                    if (!productDetailsMap.has(code)) {
+                        // Create a partial entry for display purposes
+                        productDetailsMap.set(code, {
+                            descricao: item.DESCRICAO || `Produto ${code}`,
+                            fornecedor: item.FORNECEDOR || 'N/A',
+                            codfor: item.CODFOR || 'N/A',
+                            dtCadastro: item.DTPED // Use the fixed date (Max Date)
+                        });
+                    }
+                });
 
                 self.postMessage({ type: 'progress', status: 'Aplicando regra de filial...', percentage: 75 });
 
